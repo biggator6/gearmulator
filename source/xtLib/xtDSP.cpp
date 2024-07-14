@@ -8,6 +8,7 @@
 #endif
 
 #include "../mc68k/hdi08.h"
+#include "dsp56kEmu/aar.h"
 #include "dsp56kEmu/types.h"
 
 namespace xt
@@ -33,8 +34,13 @@ namespace xt
 
 		config.aguSupportBitreverse = true;
 		config.linkJitBlocks = true;
-		config.dynamicPeripheralAddressing = true;
-		config.maxInstructionsPerBlock = 0;
+		config.dynamicPeripheralAddressing = false;
+#ifdef _DEBUG
+		config.debugDynamicPeripheralAddressing = true;
+#endif
+
+		// allow dynamic peripheral addressing for code following clr b M_AAR3,r2
+		enableDynamicPeripheralAddressing(config, m_dsp, 0x62f41b, dsp56k::M_AAR3, 16);
 
 		m_dsp.getJit().setConfig(config);
 
