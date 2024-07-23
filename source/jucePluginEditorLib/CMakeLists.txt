@@ -23,9 +23,14 @@ set(SOURCES_PM
 	patchmanager/datasourcetreeitem.cpp patchmanager/datasourcetreeitem.h
 	patchmanager/defaultskin.h
 	patchmanager/editable.cpp patchmanager/editable.h
+	patchmanager/grid.cpp patchmanager/grid.h
+	patchmanager/griditem.cpp patchmanager/griditem.h
+	patchmanager/griditemcontainer.cpp patchmanager/griditemcontainer.h
+	patchmanager/gridviewport.cpp patchmanager/gridviewport.h
 	patchmanager/grouptreeitem.cpp patchmanager/grouptreeitem.h
 	patchmanager/info.cpp patchmanager/info.h
 	patchmanager/list.cpp patchmanager/list.h
+	patchmanager/listmodel.cpp patchmanager/listmodel.h
 	patchmanager/listitem.cpp patchmanager/listitem.h
 	patchmanager/notagtreeitem.cpp patchmanager/notagtreeitem.h
 	patchmanager/patchmanager.cpp patchmanager/patchmanager.h
@@ -54,3 +59,5 @@ target_link_libraries(jucePluginEditorLib PUBLIC jucePluginLib juceUiLib jucePlu
 target_include_directories(jucePluginEditorLib PUBLIC ../JUCE/modules)
 target_compile_definitions(jucePluginEditorLib PRIVATE JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1)
 set_property(TARGET jucePluginEditorLib PROPERTY FOLDER "Gearmulator")
+
+target_include_directories(jucePluginEditorLib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)

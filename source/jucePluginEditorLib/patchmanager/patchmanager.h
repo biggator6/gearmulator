@@ -1,12 +1,12 @@
 #pragma once
 
 #include "resizerbar.h"
-#include "../../jucePluginLib/patchdb/db.h"
-
-#include "juce_gui_basics/juce_gui_basics.h"
-
 #include "state.h"
 #include "types.h"
+
+#include "jucePluginLib/patchdb/db.h"
+
+#include "juce_gui_basics/juce_gui_basics.h"
 
 namespace jucePluginEditorLib
 {
@@ -21,23 +21,32 @@ namespace genericUI
 
 namespace jucePluginEditorLib::patchManager
 {
+	class Grid;
+	class List;
 	class Status;
 	class TreeItem;
 	class SearchTree;
 	class SearchList;
 	class Info;
-	class List;
+	class ListModel;
 	class Tree;
 
 	class PatchManager : public juce::Component, public pluginLib::patchDB::DB, juce::Timer, public juce::ChangeListener
 	{
 	public:
+		enum class LayoutType
+		{
+			List,
+			Grid
+		};
+
 		static constexpr std::initializer_list<GroupType> DefaultGroupTypes{GroupType::Favourites, GroupType::LocalStorage, GroupType::Factory, GroupType::DataSources};
 
 		explicit PatchManager(Editor& _editor, Component* _root, const juce::File& _dir, const std::initializer_list<GroupType>& _groupTypes = DefaultGroupTypes);
 		~PatchManager() override;
 
 		void timerCallback() override;
+		void processDirty(const pluginLib::patchDB::Dirty& _dirty) const override;
 
 		void setSelectedItem(Tree* _tree, const TreeItem* _item);
 		void addSelectedItem(Tree* _tree, const TreeItem* _item);
@@ -50,7 +59,7 @@ namespace jucePluginEditorLib::patchManager
 
 		bool selectPatch(uint32_t _part, const pluginLib::patchDB::DataSource& _ds, uint32_t _program);
 
-		void setListStatus(uint32_t _selected, uint32_t _total);
+		void setListStatus(uint32_t _selected, uint32_t _total) const;
 
 		pluginLib::patchDB::Color getPatchColor(const pluginLib::patchDB::PatchPtr& _patch) const;
 
@@ -91,6 +100,11 @@ namespace jucePluginEditorLib::patchManager
 		bool activatePatchFromClipboard();
 		std::string toString(const pluginLib::patchDB::PatchPtr& _patch) const;
 
+		LayoutType getLayout() const { return m_layout; }
+		void setLayout(LayoutType _layout);
+
+		bool setGridLayout128();
+
 	private:
 		bool selectPatch(uint32_t _part, int _offset);
 
@@ -110,7 +124,7 @@ namespace jucePluginEditorLib::patchManager
 		void onLoadFinished() override;
 
 		void setPerInstanceConfig(const std::vector<uint8_t>& _data);
-		void getPerInstanceConfig(std::vector<uint8_t>& _data);
+		void getPerInstanceConfig(std::vector<uint8_t>& _data) const;
 
 		void onProgramChanged(uint32_t _part);
 
@@ -118,6 +132,8 @@ namespace jucePluginEditorLib::patchManager
 
 	protected:
 		void updateStateAsync(uint32_t _part, const pluginLib::patchDB::PatchPtr& _patch);
+
+		ListModel* getListModel() const;
 
 	private:
 		pluginLib::patchDB::SearchHandle getSearchHandle(const pluginLib::patchDB::DataSource& _ds, bool _selectTreeItem);
@@ -132,6 +148,7 @@ namespace jucePluginEditorLib::patchManager
 		Tree* m_treeDS = nullptr;
 		Tree* m_treeTags = nullptr;
 		List* m_list = nullptr;
+		Grid* m_grid = nullptr;
 		Info* m_info = nullptr;
 
 		SearchTree* m_searchTreeDS = nullptr;
@@ -150,5 +167,8 @@ namespace jucePluginEditorLib::patchManager
 		ResizerBar m_resizerBarC{*this, &m_stretchableManager, 5};
 
 		std::unordered_map<pluginLib::patchDB::TagType, std::string> m_tagTypeNames;
+
+		LayoutType m_layout = LayoutType::List;
+		bool m_firstTimeGridLayout = true;
 	};
 }

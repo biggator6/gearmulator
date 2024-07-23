@@ -1,6 +1,8 @@
 #pragma once
+
 #include "treeitem.h"
-#include "../../jucePluginLib/patchdb/datasource.h"
+
+#include "jucePluginLib/patchdb/datasource.h"
 
 namespace pluginLib::patchDB
 {
@@ -19,7 +21,7 @@ namespace jucePluginEditorLib::patchManager
 			return m_dataSource->type == pluginLib::patchDB::SourceType::Folder;
 		}
 
-		bool isInterestedInPatchList(const List* _list, const std::vector<pluginLib::patchDB::PatchPtr>& _patches) override;
+		bool isInterestedInPatchList(const ListModel* _list, const std::vector<pluginLib::patchDB::PatchPtr>& _patches) override;
 
 		bool isInterestedInFileDrag(const juce::StringArray& files) override;
 

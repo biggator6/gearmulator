@@ -6,9 +6,9 @@
 #include "dsp56kDebugger/debugger.h"
 #endif
 
-#include "../mc68k/hdi08.h"
+#include "mc68k/hdi08.h"
 
-#include "../wLib/dspBootCode.h"
+#include "wLib/dspBootCode.h"
 
 #include "dsp56kEmu/aar.h"
 
@@ -98,7 +98,7 @@ namespace mqLib
 		});
 
 #if DSP56300_DEBUGGER
-		m_thread.reset(new dsp56k::DSPThread(dsp(), m_name.c_str(), std::make_shared<dsp56kDebugger::Debugger>(m_dsp.dsp())));
+		m_thread.reset(new dsp56k::DSPThread(dsp(), m_name.c_str(), std::make_shared<dsp56kDebugger::Debugger>(m_dsp)));
 #else
 		m_thread.reset(new dsp56k::DSPThread(dsp(), m_name.c_str()));
 #endif
