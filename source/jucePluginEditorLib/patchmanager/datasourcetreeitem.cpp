@@ -2,14 +2,16 @@
 
 #include <cassert>
 
+#include "listmodel.h"
 #include "patchmanager.h"
+
 #include "../pluginEditor.h"
 
-#include "../../jucePluginLib/patchdb/datasource.h"
-#include "../../jucePluginLib/patchdb/search.h"
+#include "jucePluginLib/patchdb/datasource.h"
+#include "jucePluginLib/patchdb/search.h"
 
-#include "../../synthLib/buildconfig.h"
-#include "../../synthLib/os.h"
+#include "synthLib/buildconfig.h"
+#include "synthLib/os.h"
 
 namespace jucePluginEditorLib::patchManager
 {
@@ -65,7 +67,7 @@ namespace jucePluginEditorLib::patchManager
 		search(std::move(sr));
 	}
 
-	bool DatasourceTreeItem::isInterestedInPatchList(const List* _list, const std::vector<pluginLib::patchDB::PatchPtr>& _patches)
+	bool DatasourceTreeItem::isInterestedInPatchList(const ListModel* _list, const std::vector<pluginLib::patchDB::PatchPtr>& _patches)
 	{
 		return m_dataSource->type == pluginLib::patchDB::SourceType::LocalStorage;
 	}
@@ -87,7 +89,7 @@ namespace jucePluginEditorLib::patchManager
 
 		if (juce::ModifierKeys::currentModifiers.isShiftDown())
 		{
-			if(List::showDeleteConfirmationMessageBox())
+			if(ListModel::showDeleteConfirmationMessageBox())
 				getPatchManager().removePatches(m_dataSource, _patches);
 		}
 		else

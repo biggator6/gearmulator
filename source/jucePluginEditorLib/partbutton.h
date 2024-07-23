@@ -2,13 +2,13 @@
 
 #include <cstdint>
 
-#include "../juceUiLib/button.h"
+#include "juceUiLib/button.h"
 
 namespace jucePluginEditorLib
 {
 	namespace patchManager
 	{
-		class List;
+		class ListModel;
 	}
 
 	class Editor;
