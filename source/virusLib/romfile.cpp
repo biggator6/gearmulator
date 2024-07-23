@@ -14,7 +14,7 @@
 #include <cstring>	// memcpy
 
 #include "demoplaybackTI.h"
-#include "dsp56kEmu/memory.h"
+#include "dspSingle.h"
 
 namespace virusLib
 {
@@ -24,7 +24,7 @@ ROMFile::ROMFile(std::vector<uint8_t> _data, std::string _name, const DeviceMode
 	if(initialize())
 		return;
 	m_romFileData.clear();
-	bootRom.size = 0;
+	m_bootRom.size = 0;
 }
 
 ROMFile ROMFile::invalid()
@@ -58,15 +58,15 @@ bool ROMFile::initialize()
 	if (chunks.empty())
 		return false;
 
-	bootRom.size = chunks[0].items[0];
-	bootRom.offset = chunks[0].items[1];
-	bootRom.data = std::vector<uint32_t>(bootRom.size);
+	m_bootRom.size = chunks[0].items[0];
+	m_bootRom.offset = chunks[0].items[1];
+	m_bootRom.data = std::vector<uint32_t>(m_bootRom.size);
 
 	// The first chunk contains the bootrom
 	uint32_t i = 2;
-	for (; i < bootRom.size + 2; i++)
+	for (; i < m_bootRom.size + 2; i++)
 	{
-		bootRom.data[i-2] = chunks[0].items[i];
+		m_bootRom.data[i-2] = chunks[0].items[i];
 	}
 
 	// The rest of the chunks is made up of the command stream
@@ -77,8 +77,8 @@ bool ROMFile::initialize()
 		i = 0;
 	}
 
-	printf("Program BootROM size = 0x%x\n", bootRom.size);
-	printf("Program BootROM offset = 0x%x\n", bootRom.offset);
+	printf("Program BootROM size = 0x%x\n", m_bootRom.size);
+	printf("Program BootROM offset = 0x%x\n", m_bootRom.offset);
 	printf("Program CommandStream size = 0x%x\n", static_cast<uint32_t>(m_commandStream.size()));
 
 #if VIRUS_SUPPORT_TI
@@ -126,7 +126,7 @@ bool ROMFile::initialize()
 					if(j == searchSize-1)
 					{
 						TPreset preset;
-						memcpy(&preset[0], &fw.DSP[i - 4], std::size(preset));
+						memcpy(preset.data(), &fw.DSP[i - 4], std::size(preset));
 
 						// validate that we found the correct data by checking part volumes. It might just be a string somewhere in the data
 						for(size_t k=0; k<16; ++k)
@@ -136,7 +136,7 @@ bool ROMFile::initialize()
 
 							if(k == 15)
 							{
-								for(size_t k=0; k<getPresetsPerBank(); ++k)
+								for(size_t p=0; p<getPresetsPerBank(); ++p)
 									m_multis.push_back(preset);
 							}
 						}
@@ -330,27 +330,9 @@ bool ROMFile::loadPresetFile(std::istream& _file, DeviceModel _model)
 	return true;
 }
 
-std::thread ROMFile::bootDSP(dsp56k::DSP& dsp, dsp56k::HDI08& _hdi08) const
+std::thread ROMFile::bootDSP(DspSingle& _dsp) const
 {
-	// Load BootROM in DSP memory
-	for (uint32_t i=0; i<bootRom.data.size(); i++)
-	{
-		const auto p = bootRom.offset + i;
-		dsp.memory().set(dsp56k::MemArea_P, p, bootRom.data[i]);
-		dsp.getJit().notifyProgramMemWrite(p);
-	}
-
-//	dsp.memory().saveAssembly((m_file + "_BootROM.asm").c_str(), bootRom.offset, bootRom.size, false, false, &periph);
-
-	// Attach command stream
-	std::thread feedCommandStream([&]()
-	{
-		_hdi08.writeRX(m_commandStream);
-	});
-
-	// Initialize the DSP
-	dsp.setPC(bootRom.offset);
-	return feedCommandStream;
+	return _dsp.boot(m_bootRom, m_commandStream);
 }
 
 std::string ROMFile::getModelName() const
