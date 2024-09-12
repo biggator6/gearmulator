@@ -9,11 +9,14 @@
 #include "n2xLfo.h"
 #include "n2xMasterVolume.h"
 #include "n2xOctLed.h"
+#include "n2xOutputMode.h"
 #include "n2xPart.h"
 #include "n2xParts.h"
 #include "n2xPatchManager.h"
 #include "n2xPluginProcessor.h"
 #include "n2xVmMap.h"
+
+#include "jucePluginEditorLib/midiPorts.h"
 
 #include "jucePluginLib/parameterbinding.h"
 #include "jucePluginLib/pluginVersion.h"
@@ -79,8 +82,10 @@ namespace n2xJucePlugin
 			m_lfos[i].reset(new Lfo(*this, i));
 		m_masterVolume.reset(new MasterVolume(*this));
 		m_octLed.reset(new OctLed(*this));
+		m_outputMode.reset(new OutputMode(*this));
 		m_parts.reset(new Parts(*this));
 		m_vmMap.reset(new VmMap(*this, m_parameterBinding));
+		m_midiPorts.reset(new jucePluginEditorLib::MidiPorts(*this, getProcessor()));
 
 		onPartChanged.set(m_controller.onCurrentPartChanged, [this](const uint8_t& _part)
 		{
@@ -127,28 +132,11 @@ namespace n2xJucePlugin
 			lfo.reset();
 		m_masterVolume.reset();
 		m_octLed.reset();
+		m_outputMode.reset();
 		m_parts.reset();
 		m_vmMap.reset();
-	}
-
-	const char* Editor::findEmbeddedResource(const std::string& _filename, uint32_t& _size)
-	{
-		for(size_t i=0; i<BinaryData::namedResourceListSize; ++i)
-		{
-			if (BinaryData::originalFilenames[i] != _filename)
-				continue;
-
-			int size = 0;
-			const auto res = BinaryData::getNamedResource(BinaryData::namedResourceList[i], size);
-			_size = static_cast<uint32_t>(size);
-			return res;
-		}
-		return nullptr;
-	}
-
-	const char* Editor::findResourceByFilename(const std::string& _filename, uint32_t& _size)
-	{
-		return findEmbeddedResource(_filename, _size);
+		m_midiPorts.reset();
+		m_onSelectedPatchChanged.reset();
 	}
 
 	std::pair<std::string, std::string> Editor::getDemoRestrictionText() const
@@ -213,7 +201,7 @@ namespace n2xJucePlugin
 		if(getPatchManager()->createSaveMenuEntries(menu, "Program"))
 			menu.addSeparator();
 
-		getPatchManager()->createSaveMenuEntries(menu, m_controller.getPartCount(), "Performance");
+		getPatchManager()->createSaveMenuEntries(menu, "Performance", 1);
 
 		menu.showMenuAsync({});
 	}

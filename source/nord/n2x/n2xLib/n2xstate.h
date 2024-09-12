@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstddef>
 #include <unordered_map>
+#include <string>
 
 #include "n2xmiditypes.h"
 #include "n2xtypes.h"
@@ -17,8 +18,8 @@ namespace n2x
 	class State
 	{
 	public:
-		using SingleDump = std::array<uint8_t, g_singleDumpSize>;
-		using MultiDump = std::array<uint8_t, g_multiDumpSize>;
+		using SingleDump = std::array<uint8_t, g_singleDumpWithNameSize>;
+		using MultiDump = std::array<uint8_t, g_multiDumpWithNameSize>;
 
 		explicit State(Hardware* _hardware);
 
@@ -38,8 +39,10 @@ namespace n2x
 		bool changeSingleParameter(uint8_t _part, SingleParam _parameter, uint8_t _value);
 		bool changeMultiParameter(MultiParam _parameter, uint8_t _value);
 
+		static bool changeSingleParameter(SingleDump& _dump, SingleParam _param, uint8_t _value);
+
 		template<typename TDump>
-		bool changeDumpParameter(TDump& _dump, uint32_t _offset, uint8_t _value)
+		static bool changeDumpParameter(TDump& _dump, uint32_t _offset, uint8_t _value)
 		{
 			const auto current = unpackNibbles(_dump, _offset);
 			if(current == _value)
@@ -117,6 +120,15 @@ namespace n2x
 		static bool parseKnobSysex(KnobType& _type, uint8_t& _value, const std::vector<uint8_t>& _sysex);
 
 		bool getKnobState(uint8_t& _result, KnobType _type) const;
+
+		static bool isSingleDump(const std::vector<uint8_t>& _dump);
+		static bool isMultiDump(const std::vector<uint8_t>& _dump);
+
+		static std::string extractPatchName(const std::vector<uint8_t>& _dump);
+		static bool isDumpWithPatchName(const std::vector<uint8_t>& _dump);
+		static std::vector<uint8_t> stripPatchName(const std::vector<uint8_t>& _dump);
+		static bool isValidPatchName(const std::vector<uint8_t>& _dump);
+		static std::vector<uint8_t> validateDump(const std::vector<uint8_t>& _dump);
 
 	private:
 		template<size_t Size> bool receive(const std::array<uint8_t, Size>& _data)

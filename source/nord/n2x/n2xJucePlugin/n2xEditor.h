@@ -5,6 +5,7 @@
 
 namespace jucePluginEditorLib
 {
+	class MidiPorts;
 	class FocusedParameter;
 	class Processor;
 }
@@ -16,6 +17,7 @@ namespace pluginLib
 
 namespace n2xJucePlugin
 {
+	class OutputMode;
 	class Lfo;
 	class FocusedParameter;
 	class PatchManager;
@@ -39,8 +41,6 @@ namespace n2xJucePlugin
 		Editor& operator = (Editor&&) = delete;
 		Editor& operator = (const Editor&) = delete;
 
-		static const char* findEmbeddedResource(const std::string& _filename, uint32_t& _size);
-		const char* findResourceByFilename(const std::string& _filename, uint32_t& _size) override;
 		std::pair<std::string, std::string> getDemoRestrictionText() const override;
 
 		Controller& getN2xController() const { return m_controller; }
@@ -76,8 +76,10 @@ namespace n2xJucePlugin
 		std::array<std::unique_ptr<Lfo>, 2> m_lfos;
 		std::unique_ptr<MasterVolume> m_masterVolume;
 		std::unique_ptr<OctLed> m_octLed;
+		std::unique_ptr<OutputMode> m_outputMode;
 		std::unique_ptr<Parts> m_parts;
 		std::unique_ptr<VmMap> m_vmMap;
+		std::unique_ptr<jucePluginEditorLib::MidiPorts> m_midiPorts;
 
 		pluginLib::EventListener<uint8_t> onPartChanged;
 
