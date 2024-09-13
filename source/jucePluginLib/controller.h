@@ -31,7 +31,7 @@ namespace pluginLib
 
 		Event<uint8_t> onCurrentPartChanged;
 
-		explicit Controller(Processor& _processor, const std::string& _parameterDescJson);
+		explicit Controller(Processor& _processor, const std::string& _parameterDescJsonFilename);
 		~Controller() override;
 
 		virtual void sendParameterChange(const Parameter& _parameter, ParamValue _value) = 0;
@@ -63,7 +63,7 @@ namespace pluginLib
 		const auto& getExposedParameters() const { return m_synthParams; }
 
 		uint8_t getCurrentPart() const { return m_currentPart; }
-		virtual void setCurrentPart(uint8_t _part);
+		virtual bool setCurrentPart(uint8_t _part);
 		virtual uint8_t getPartCount() const { return 16; }
 
 		virtual bool parseSysexMessage(const SysEx&, synthLib::MidiEventSource) = 0;
@@ -84,6 +84,7 @@ namespace pluginLib
 	private:
 		void getMidiMessages(std::vector<synthLib::SMidiEvent>&);
 		void processMidiMessages();
+		std::string loadParameterDescriptions(const std::string& _filename) const;
 
 	public:
 		ParameterLocking& getParameterLocking() { return m_locking; }
@@ -100,11 +101,17 @@ namespace pluginLib
 			return it->second.get();
 		}
 
+		SoftKnob* getSoftknob(const Parameter* _parameter)
+		{
+			const auto it = m_softKnobs.find(_parameter);
+			return it->second.get();
+		}
+
 		Processor& getProcessor() const { return m_processor; }
 
 	protected:
-		virtual Parameter* createParameter(Controller& _controller, const Description& _desc, uint8_t _part, int _uid);
-		void registerParams(juce::AudioProcessor& _processor);
+		virtual Parameter* createParameter(Controller& _controller, const Description& _desc, uint8_t _part, int _uid, const Parameter::PartFormatter& _partFormatter);
+		void registerParams(juce::AudioProcessor& _processor, Parameter::PartFormatter _partFormatter = nullptr);
 
 		void sendSysEx(const pluginLib::SysEx &) const;
 		bool sendSysEx(const std::string& _packetName) const;

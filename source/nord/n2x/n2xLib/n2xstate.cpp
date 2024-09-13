@@ -194,7 +194,10 @@ namespace n2x
 	bool State::getState(std::vector<uint8_t>& _state)
 	{
 		updateMultiFromSingles();
-		_state.insert(_state.end(), m_multi.begin(), m_multi.end());
+		if(m_multi[g_multiDumpSize - 1] == 0xf7)
+			_state.insert(_state.end(), m_multi.begin(), m_multi.end() - g_nameLength);
+		else
+			_state.insert(_state.end(), m_multi.begin(), m_multi.end());
 		for (const auto it : m_knobStates)
 		{
 			auto knobSysex = createKnobSysex(it.first, it.second);
@@ -229,23 +232,25 @@ namespace n2x
 		const auto bank = sysex[SysexIndex::IdxMsgType];
 		const auto prog = sysex[SysexIndex::IdxMsgSpec];
 
-		if(sysex.size() == g_singleDumpSize)
+		if(isSingleDump(sysex))
 		{
 			if(bank != SysexByte::SingleDumpBankEditBuffer)
 				return false;
 			if(prog > m_singles.size())
 				return false;
+			m_singles[prog].fill(0);
 			std::copy(sysex.begin(), sysex.end(), m_singles[prog].begin());
 			send(_ev);
 			return true;
 		}
 
-		if(sysex.size() == g_multiDumpSize)
+		if(isMultiDump(sysex))
 		{
 			if(bank != SysexByte::MultiDumpBankEditBuffer)
 				return false;
 			if(prog != 0)
 				return false;
+			m_multi.fill(0);
 			std::copy(sysex.begin(), sysex.end(), m_multi.begin());
 			send(_ev);
 			return true;
@@ -346,12 +351,17 @@ namespace n2x
 	{
 		if(_part >= m_singles.size())
 			return false;
-		return changeDumpParameter(m_singles[_part], getOffsetInSingleDump(_parameter), _value);
+		return changeSingleParameter(m_singles[_part], _parameter, _value);
 	}
 
 	bool State::changeMultiParameter(const MultiParam _parameter, const uint8_t _value)
 	{
 		return changeDumpParameter(m_multi, getOffsetInMultiDump(_parameter), _value);
+	}
+
+	bool State::changeSingleParameter(SingleDump& _dump, const SingleParam _param, const uint8_t _value)
+	{
+		return changeDumpParameter(_dump, getOffsetInSingleDump(_param), _value);
 	}
 
 	void State::updateMultiFromSingles()
@@ -363,6 +373,7 @@ namespace n2x
 	void State::createDefaultSingle(SingleDump& _single, const uint8_t _program, const uint8_t _bank/* = n2x::SingleDumpBankEditBuffer*/)
 	{
 		createHeader(_single, _bank, _program);
+		_single[g_singleDumpSize-1] = 0xf7;
 
 		uint32_t o = IdxMsgSpec + 1;
 
@@ -391,6 +402,7 @@ namespace n2x
 	void State::createDefaultMulti(MultiDump& _multi, const uint8_t _bank/* = SysexByte::MultiDumpBankEditBuffer*/)
 	{
 		createHeader(_multi, _bank, 0);
+		_multi[g_multiDumpSize-1] = 0xf7;
 
 		SingleDump single;
 		createDefaultSingle(single, 0);
@@ -472,12 +484,88 @@ namespace n2x
 		return true;
 	}
 
+	bool State::isSingleDump(const std::vector<uint8_t>& _dump)
+	{
+		return _dump.size() == g_singleDumpSize || _dump.size() == g_singleDumpWithNameSize;
+	}
+
+	bool State::isMultiDump(const std::vector<uint8_t>& _dump)
+	{
+		return _dump.size() == g_multiDumpSize || _dump.size() == g_multiDumpWithNameSize;
+	}
+
+	std::string State::extractPatchName(const std::vector<uint8_t>& _dump)
+	{
+		if(!isDumpWithPatchName(_dump))
+			return {};
+		auto* begin = &_dump[_dump.size() - g_nameLength - 1];
+		if(*begin == 0xf7)
+			return {};
+		std::string name(reinterpret_cast<const char*>(begin), g_nameLength);
+		return name;
+	}
+
+	bool State::isDumpWithPatchName(const std::vector<uint8_t>& _dump)
+	{
+		return _dump.size() == g_singleDumpWithNameSize || _dump.size() == g_multiDumpWithNameSize;
+	}
+
+	std::vector<uint8_t> State::stripPatchName(const std::vector<uint8_t>& _dump)
+	{
+		if(!isDumpWithPatchName(_dump))
+			return _dump;
+		auto d = _dump;
+		d.erase(d.end() - g_nameLength - 1, d.end() - 1);
+		assert(d.size() == g_singleDumpSize || d.size() == g_multiDumpSize);
+		d.back() = 0xf7;
+		return d;
+	}
+
+	bool State::isValidPatchName(const std::vector<uint8_t>& _dump)
+	{
+		if(!isDumpWithPatchName(_dump))
+			return false;
+
+		if(_dump.back() != 0xf7)
+			return false;
+
+		const auto nameStart = _dump.size() - g_nameLength - 1;
+
+		for(size_t i=nameStart; i<nameStart+g_nameLength; ++i)
+		{
+			if(_dump[i] < 32 || _dump[i] >= 128)
+				return false;
+		}
+		return true;
+	}
+
+	std::vector<uint8_t> State::validateDump(const std::vector<uint8_t>& _dump)
+	{
+		if(!isValidPatchName(_dump))
+			return stripPatchName(_dump);
+		return _dump;
+	}
+
 	void State::send(const synthLib::SMidiEvent& _e) const
 	{
 		if(_e.source == synthLib::MidiEventSource::Plugin)
 			return;
+
 		if(m_hardware)
-			m_hardware->sendMidi(_e);
+		{
+			const auto& sysex = _e.sysex;
+
+			if(isDumpWithPatchName(sysex))
+			{
+				auto e = _e;
+				e.sysex = stripPatchName(sysex);
+				m_hardware->sendMidi(e);
+			}
+			else
+			{
+				m_hardware->sendMidi(_e);
+			}
+		}
 	}
 
 	template<size_t Size>

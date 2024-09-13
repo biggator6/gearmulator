@@ -33,12 +33,12 @@ namespace n2xJucePlugin
 		stopLoaderThread();
 	}
 
-	bool PatchManager::requestPatchForPart(pluginLib::patchDB::Data& _data, const uint32_t _part)
+	bool PatchManager::requestPatchForPart(pluginLib::patchDB::Data& _data, const uint32_t _part, const uint64_t _userData)
 	{
-		if(_part < m_controller.getPartCount())
-			_data = m_controller.createSingleDump(n2x::SysexByte::SingleDumpBankA, 0, static_cast<uint8_t>(_part));
-		else
+		if(_userData)
 			_data = m_controller.createMultiDump(n2x::SysexByte::MultiDumpBankA, 0);
+		else
+			_data = m_controller.createSingleDump(n2x::SysexByte::SingleDumpBankA, 0, static_cast<uint8_t>(_part));
 		return !_data.empty();
 	}
 
@@ -54,7 +54,7 @@ namespace n2xJucePlugin
 
 		const auto bank = _sysex[n2x::SysexIndex::IdxMsgType];
 		const auto program = _sysex[n2x::SysexIndex::IdxMsgSpec];
-		const auto isSingle = _sysex.size() == n2x::g_singleDumpSize;
+		const auto isSingle = n2x::State::isSingleDump(_sysex);
 
 		auto p = std::make_shared<pluginLib::patchDB::Patch>();
 
@@ -96,10 +96,21 @@ namespace n2xJucePlugin
 
 	pluginLib::patchDB::Data PatchManager::prepareSave(const pluginLib::patchDB::PatchPtr& _patch) const
 	{
-		auto d = _patch->sysex;
+		auto d = n2x::State::stripPatchName(_patch->sysex);
 
 		d[n2x::SysexIndex::IdxMsgType] = static_cast<uint8_t>(_patch->bank);
 		d[n2x::SysexIndex::IdxMsgSpec] = static_cast<uint8_t>(_patch->program);
+
+		auto name = _patch->getName();
+
+		if(name.size() > n2x::g_nameLength)
+			name = name.substr(0, n2x::g_nameLength);
+		while(name.size() < n2x::g_nameLength)
+			name.push_back(' ');
+
+		d.pop_back();
+		d.insert(d.end(), name.begin(), name.end());
+		d.push_back(0xf7);
 
 		return d;
 	}
@@ -133,7 +144,13 @@ namespace n2xJucePlugin
 		if(!isValidPatchDump(_sysex))
 			return {};
 
-		const auto isSingle = _sysex.size() == n2x::g_singleDumpSize;
+		{
+			const auto nameFromDump = n2x::State::extractPatchName(_sysex);
+			if(!nameFromDump.empty())
+				return nameFromDump;
+		}
+
+		const auto isSingle = n2x::State::isSingleDump(_sysex);
 
 		const auto bank = _sysex[n2x::SysexIndex::IdxMsgType];
 		const auto program = _sysex[n2x::SysexIndex::IdxMsgSpec];
@@ -168,8 +185,8 @@ namespace n2xJucePlugin
 
 	bool PatchManager::isValidPatchDump(const pluginLib::patchDB::Data& _sysex)
 	{
-		const auto isSingle = _sysex.size() == n2x::g_singleDumpSize;
-		const auto isMulti = _sysex.size() == n2x::g_multiDumpSize;
+		const auto isSingle = n2x::State::isSingleDump(_sysex);
+		const auto isMulti = n2x::State::isMultiDump(_sysex);
 
 		if(!isSingle && !isMulti)
 			return false;

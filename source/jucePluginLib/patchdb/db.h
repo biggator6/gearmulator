@@ -72,8 +72,8 @@ namespace pluginLib::patchDB
 
 		static bool isValid(const PatchPtr& _patch);
 
-		PatchPtr requestPatchForPart(uint32_t _part);
-		virtual bool requestPatchForPart(Data& _data, uint32_t _part) = 0;
+		PatchPtr requestPatchForPart(uint32_t _part, uint64_t _userData = 0);
+		virtual bool requestPatchForPart(Data& _data, uint32_t _part, uint64_t _userData) = 0;
 
 		bool isLoading() const { return m_loading; }
 		bool isScanning() const { return !m_loader.empty(); }
@@ -141,9 +141,11 @@ namespace pluginLib::patchDB
 		bool saveJson(const DataSourceNodePtr& _ds);
 		bool saveJson(const juce::File& _target, juce::DynamicObject* _src);
 
+	public:
 		juce::File getJsonFile(const DataSource& _ds) const;
 		juce::File getLocalStorageFile(const DataSource& _ds) const;
 
+	private:
 		bool saveLocalStorage();
 
 		void pushError(std::string _string);
