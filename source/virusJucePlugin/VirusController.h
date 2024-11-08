@@ -4,6 +4,7 @@
 #include "jucePluginLib/controller.h"
 #include "jucePluginLib/event.h"
 
+#include "virusLib/frontpanelState.h"
 #include "virusLib/microcontrollerTypes.h"
 #include "virusLib/romfile.h"
 
@@ -14,6 +15,8 @@ namespace virus
     class Controller : public pluginLib::Controller
     {
     public:
+		pluginLib::Event<virusLib::FrontpanelState> onFrontPanelStateChanged;
+
         struct Patch
         {
             std::string name;
@@ -130,7 +133,8 @@ namespace virus
 
 		std::function<void(int)> onProgramChange = {};
 		std::function<void()> onMsgDone = {};
-		std::function<void(virusLib::BankNumber _bank, uint32_t _program)> onRomPatchReceived = {};
+		std::function<void(virusLib::BankNumber, uint32_t)> onRomPatchReceived = {};
+		std::function<void()> onMultiReceived = {};
 
 		bool requestProgram(uint8_t _bank, uint8_t _program, bool _multi) const;
 		bool requestSingle(uint8_t _bank, uint8_t _program) const;
@@ -155,6 +159,8 @@ namespace virus
         bool parseSingle(pluginLib::MidiPacket::Data& _data, pluginLib::MidiPacket::AnyPartParamValues& _parameterValues, const pluginLib::SysEx& _msg) const;
         bool parseSingle(pluginLib::MidiPacket::Data& _data, pluginLib::MidiPacket::AnyPartParamValues& _parameterValues, const pluginLib::SysEx& _msg, MidiPacketType& usedPacketType) const;
 
+		const auto& getFrontpanelState() const { return m_frontpanelState; }
+
     private:
         Singles m_singles;
         SinglePatch m_singleEditBuffer;                     // single mode
@@ -177,5 +183,6 @@ namespace virus
         uint8_t m_currentProgram[16]{};
         PresetSource m_currentPresetSource[16]{PresetSource::Unknown};
 		pluginLib::EventListener<const virusLib::ROMFile*> m_onRomChanged;
+        virusLib::FrontpanelState m_frontpanelState;
     };
 }; // namespace Virus

@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_devices/juce_audio_devices.h>
 
+#include "bypassBuffer.h"
 #include "controller.h"
 #include "midiports.h"
 
@@ -36,10 +37,12 @@ namespace pluginLib
 		struct Properties
 		{
 			const std::string name;
+			const std::string vendor;
 			const bool isSynth;
 			const bool wantsMidiInput;
 			const bool producesMidiOut;
 			const bool isMidiEffect;
+			const std::string lv2Uri;
 			BinaryDataRef binaryData;
 		};
 
@@ -118,6 +121,14 @@ namespace pluginLib
 		auto& getMidiPorts() { return m_midiPorts; }
 
 		std::optional<std::pair<const char*, uint32_t>> findResource(const std::string& _filename) const;
+
+		std::string getDataFolder(bool _useFxFolder = false) const;
+		std::string getPublicRomFolder() const;
+		std::string getConfigFolder(bool _useFxFolder = false) const;
+		std::string getPatchManagerDataFolder(bool _useFxFolder = false) const;
+		std::string getConfigFile(bool _useFxFolder = false) const;
+		std::string getProductName(bool _useFxName = false) const;
+
 	protected:
 		void destroyController();
 
@@ -136,6 +147,7 @@ namespace pluginLib
 		bool producesMidi() const override;
 		bool isMidiEffect() const override;
 		void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) override;
+		void processBlockBypassed(juce::AudioBuffer<float>& _buffer, juce::MidiBuffer& _midiMessages) override;
 
 #if !SYNTHLIB_DEMO_MODE
 		void setState(const void *_data, size_t _sizeInBytes);
@@ -171,5 +183,6 @@ namespace pluginLib
 		float m_preferredDeviceSamplerate = 0.0f;
 		float m_hostSamplerate = 0.0f;
 		MidiPorts m_midiPorts;
+		BypassBuffer m_bypassBuffer;
 	};
 }

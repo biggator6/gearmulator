@@ -1,6 +1,9 @@
 #include "OsirusProcessor.h"
 #include "OsirusEditorState.h"
+
+// ReSharper disable once CppUnusedIncludeDirective
 #include "BinaryData.h"
+#include "jucePluginLib/processorPropertiesInit.h"
 
 #include "virusLib/romloader.h"
 
@@ -15,17 +18,6 @@ namespace
 		opts.osxLibrarySubFolder = "Application Support/DSP56300 Emulator";
 		return opts;
 	}
-
-	pluginLib::Processor::BinaryDataRef getBinaryData()
-	{
-		return
-		{
-			BinaryData::namedResourceListSize,
-			BinaryData::originalFilenames,
-			BinaryData::namedResourceList,
-			BinaryData::getNamedResource
-		};
-	}
 }
 
 //==============================================================================
@@ -37,10 +29,10 @@ OsirusProcessor::OsirusProcessor() :
                    .withOutput("Out 2", juce::AudioChannelSet::stereo(), true)
                    .withOutput("Out 3", juce::AudioChannelSet::stereo(), true)
 #endif
-	, ::getConfigOptions(), pluginLib::Processor::Properties{JucePlugin_Name, JucePlugin_IsSynth, JucePlugin_WantsMidiInput, JucePlugin_ProducesMidiOutput, JucePlugin_IsMidiEffect, getBinaryData()}
-	, virusLib::ROMLoader::findROMs(virusLib::DeviceModel::ABC), virusLib::DeviceModel::ABC)
+	, ::getConfigOptions(), pluginLib::initProcessorProperties()
+	, virusLib::DeviceModel::ABC)
 {
-	postConstruct();
+	postConstruct(virusLib::ROMLoader::findROMs(virusLib::DeviceModel::ABC));
 }
 
 OsirusProcessor::~OsirusProcessor()

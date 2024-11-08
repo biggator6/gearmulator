@@ -31,7 +31,7 @@ namespace xtJucePlugin
 	class Editor final : public jucePluginEditorLib::Editor
 	{
 	public:
-		Editor(jucePluginEditorLib::Processor& _processor, pluginLib::ParameterBinding& _binding, std::string _skinFolder, const std::string& _jsonFilename);
+		Editor(jucePluginEditorLib::Processor& _processor, pluginLib::ParameterBinding& _binding, const jucePluginEditorLib::Skin& _skin);
 		~Editor() override;
 
 		Editor(Editor&&) = delete;
@@ -53,6 +53,8 @@ namespace xtJucePlugin
 		void setCurrentPart(uint8_t _part) override;
 
 		auto& getParameterBinding() const { return m_parameterBinding; }
+
+		const WaveEditor* getWaveEditor() const { return m_waveEditor; }
 
 	private:
 		void mouseEnter(const juce::MouseEvent& _event) override;

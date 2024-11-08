@@ -83,11 +83,19 @@ namespace virus
 
     Controller::~Controller() = default;
 
-    bool Controller::parseSysexMessage(const pluginLib::SysEx& _msg, synthLib::MidiEventSource)
+    bool Controller::parseSysexMessage(const pluginLib::SysEx& _msg, synthLib::MidiEventSource _source)
 	{
         std::string name;
     	pluginLib::MidiPacket::Data data;
         pluginLib::MidiPacket::ParamValues parameterValues;
+
+		if(_msg.size() > 6 && _msg[6] == virusLib::DUMP_EMU_SYNTHSTATE)
+		{
+			if(!m_frontpanelState.fromMidiEvent(_msg))
+				return false;
+			onFrontPanelStateChanged(m_frontpanelState);
+			return true;
+		}
 
         if(parseMidiPacket(name,  data, parameterValues, _msg))
         {
@@ -101,7 +109,12 @@ namespace virus
             else if(name == midiPacketName(MidiPacketType::MultiDump))
                 parseMulti(_msg, data, parameterValues);
             else if(name == midiPacketName(MidiPacketType::ParameterChange))
-                parseParamChange(data);
+            {
+				// TI DSP sends parameter changes back as sysex, unsure why. Ignore them as it stops
+				// host automation because the host thinks we "edit" the parameter
+				if(_source != synthLib::MidiEventSource::Plugin)
+	                parseParamChange(data);
+            }
             else
             {
 		        LOG("Controller: Begin unhandled SysEx! --");
@@ -501,6 +514,9 @@ namespace virus
 			}
 
 			getProcessor().updateHostDisplay(juce::AudioProcessorListener::ChangeDetails().withProgramChanged(true));
+
+			if(onMultiReceived)
+				onMultiReceived();
 		}
     }
 
@@ -512,7 +528,9 @@ namespace virus
 		uint8_t page;
 
 		if (status == synthLib::M_CONTROLCHANGE)
+		{
 			page = virusLib::PAGE_A;
+		}
 		else if (status == synthLib::M_POLYPRESSURE)
 		{
 			// device decides if PP is enabled and will echo any parameter change to us. Reject any other source
@@ -520,8 +538,31 @@ namespace virus
 				return false;
 			page = virusLib::PAGE_B;
 		}
+		else if(status == synthLib::M_PROGRAMCHANGE)
+		{
+			if(isMultiMode())
+			{
+				for(uint8_t p=0; p<getPartCount(); ++p)
+				{
+					const auto idx = getParameterIndexByName("Part Midi Channel");
+					if(idx == pluginLib::Controller::InvalidParameterIndex)
+						continue;
+
+					const auto v = getParameter(idx, p);
+					if(v->getUnnormalizedValue() == part)
+						requestSingle(toMidiByte(virusLib::BankNumber::EditBuffer), p);
+				}
+			}
+			else
+			{
+				requestSingle(toMidiByte(virusLib::BankNumber::EditBuffer), virusLib::SINGLE);
+			}
+			return true;
+		}
 		else
+		{
 			return false;
+		}
 
 		const auto& params = findSynthParam(part, page, m.b);
 		for (const auto & p : params)
@@ -741,31 +782,12 @@ namespace virus
         {
             _index -= 2;
 
-            const auto countSnow    = virusLib::ROMFile::getRomBankCount(virusLib::DeviceModel::Snow);
             const auto countTI      = virusLib::ROMFile::getRomBankCount(virusLib::DeviceModel::TI);
             const auto countTI2     = virusLib::ROMFile::getRomBankCount(virusLib::DeviceModel::TI2);
 
-            switch(m_processor.getModel())
-            {
-            case virusLib::DeviceModel::Snow: 
-                if(_index < countSnow)                  sprintf(temp, "Snow Rom %c", 'A' + _index);
-                else if(_index < countTI + countSnow)	sprintf(temp, "TI Rom %c", 'A' + (_index - countSnow));
-                else			                 		sprintf(temp, "TI2 Rom %c", 'A' + (_index - countTI - countSnow));
-                break;
-            case virusLib::DeviceModel::TI:
-                if(_index < countTI)	                sprintf(temp, "TI Rom %c", 'A' + _index);
-                else if(_index < countTI + countTI2)	sprintf(temp, "TI2 Rom %c", 'A' + (_index - countTI));
-                else			    		            sprintf(temp, "Snow Rom %c", 'A' + (_index - countTI - countTI2));
-                break;
-            case virusLib::DeviceModel::TI2: 
-                if(_index < countTI2)	                sprintf(temp, "TI2 Rom %c", 'A' + _index);
-                else if(_index < countTI2 + countTI)	sprintf(temp, "TI Rom %c", 'A' + (_index - countTI2));
-                else			    	            	sprintf(temp, "Snow Rom %c", 'A' + (_index - countTI2 - countTI));
-                break;
-            default:
-                assert(false);
-                break;
-            }
+            if(_index < countTI)	                sprintf(temp, "TI Rom %c", 'A' + _index);
+            else if(_index < countTI + countTI2)	sprintf(temp, "TI2 Rom %c", 'A' + (_index - countTI));
+            else			    		            sprintf(temp, "Snow Rom %c", 'A' + (_index - countTI - countTI2));
         }
         return temp;
     }

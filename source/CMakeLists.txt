@@ -6,6 +6,18 @@ option(${CMAKE_PROJECT_NAME}_SYNTH_VAVRA "Build Vavra" on)
 option(${CMAKE_PROJECT_NAME}_SYNTH_XENIA "Build Xenia" on)
 option(${CMAKE_PROJECT_NAME}_SYNTH_NODALRED2X "Build NodalRed2x" on)
 
+# ----------------- Add our cmake scripts to IDE
+
+add_custom_target(cmakeScripts SOURCES 
+	findvst2.cmake 
+	juce.cmake 
+	macsetup.cmake 
+	macsetup.command.in 
+	runAuValidation.cmake 
+	skins.cmake
+	skins.h.in
+	../base.cmake)
+
 # ----------------- DSP56300 emulator
 
 set(ASMJIT_STATIC TRUE)
@@ -20,6 +32,9 @@ add_subdirectory(baseLib)
 add_subdirectory(synthLib)
 add_subdirectory(libresample)
 
+include(macsetup.cmake)
+include(skins.cmake)
+
 # ----------------- Try to install VST2 SDK
 
 include(findvst2.cmake)
@@ -29,7 +44,7 @@ include(findvst2.cmake)
 set_property(GLOBAL PROPERTY USE_FOLDERS YES)
 if(${CMAKE_PROJECT_NAME}_BUILD_JUCEPLUGIN)
 	set(JUCE_ENABLE_MODULE_SOURCE_GROUPS ON CACHE BOOL "" FORCE)
-	add_subdirectory(JUCE)
+	add_subdirectory(JUCE EXCLUDE_FROM_ALL)
 	if(${CMAKE_PROJECT_NAME}_BUILD_JUCEPLUGIN_CLAP)
 		add_subdirectory(clap-juce-extensions)
 	endif()

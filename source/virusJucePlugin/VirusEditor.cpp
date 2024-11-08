@@ -16,13 +16,13 @@
 
 namespace genericVirusUI
 {
-	VirusEditor::VirusEditor(pluginLib::ParameterBinding& _binding, virus::VirusProcessor& _processorRef, const std::string& _jsonFilename, std::string _skinFolder) :
-		Editor(_processorRef, _binding, std::move(_skinFolder)),
+	VirusEditor::VirusEditor(pluginLib::ParameterBinding& _binding, virus::VirusProcessor& _processorRef, const jucePluginEditorLib::Skin& _skin) :
+		Editor(_processorRef, _binding, _skin),
 		m_processor(_processorRef),
 		m_parameterBinding(_binding),
 		m_romChangedListener(_processorRef.evRomChanged)
 	{
-		create(_jsonFilename);
+		create();
 
 		m_parts.reset(new Parts(*this));
 		m_leds.reset(new Leds(*this, _processorRef));
@@ -41,16 +41,13 @@ namespace genericVirusUI
 		if(!getConditionCountRecursive())
 			m_fxPage.reset(new FxPage(*this));
 
-		const auto configOptions = getProcessor().getConfigOptions();
-		const auto dir = configOptions.getDefaultFile().getParentDirectory();
-
 		{
 			auto pmParent = findComponent("ContainerPatchManager", false);
 			if(!pmParent)
 				pmParent = findComponent("page_presets", false);
 			if(!pmParent)
 				pmParent = findComponent("page_2_browser");
-			setPatchManager(new PatchManager(*this, pmParent, dir));
+			setPatchManager(new PatchManager(*this, pmParent));
 		}
 
 		m_presetName = findComponentT<juce::Label>("PatchName");
@@ -94,7 +91,7 @@ namespace genericVirusUI
 
 			m_romSelector->setSelectedId(static_cast<int>(m_processor.getSelectedRomIndex()) + 1, juce::dontSendNotification);
 
-			m_romSelector->onChange = [this, roms]
+			m_romSelector->onChange = [this]
 			{
 				const auto oldIndex = m_processor.getSelectedRomIndex();
 				const auto newIndex = m_romSelector->getSelectedId() - 1;
@@ -373,6 +370,54 @@ namespace genericVirusUI
 			}
 			else if(results.size() > 1)
 			{
+				// check if this is one multi and 16 singles and load them as arrangement dump. Ask user for confirmation first
+				if(results.size() == 17)
+				{
+					uint32_t multiCount = 0;
+
+					pluginLib::patchDB::DataList singles;
+					pluginLib::patchDB::Data multi;
+
+					for (const auto& result : results)
+					{
+						if(result.size() < 256)
+							continue;
+
+						const auto cmd = result[6];
+
+						if(cmd == virusLib::SysexMessageType::DUMP_MULTI)
+						{
+							multi = result;
+							++multiCount;
+						}
+						else if(cmd == virusLib::SysexMessageType::DUMP_SINGLE)
+						{
+							singles.push_back(result);
+						}
+					}
+
+					if(multiCount == 1 && singles.size() == 16)
+					{
+						const auto title = m_processor.getProductName(true) + " - Load Arrangement Dump?";
+						const auto message = "This file contains an arrangement dump, i.e. one Multi and 16 Singles.\nDo you want to replace the current state by this dump?";
+
+						if(1 == juce::NativeMessageBox::showYesNoBox(juce::MessageBoxIconType::QuestionIcon, title, message, nullptr))
+						{
+							setPlayMode(virusLib::PlayMode::PlayModeMulti);
+							c.sendSysEx(multi);
+
+							for(uint8_t i=0; i<static_cast<uint8_t>(singles.size()); ++i)
+							{
+								const auto& single = singles[i];
+								c.modifySingleDump(single, virusLib::BankNumber::EditBuffer, i);
+								c.activatePatch(single, i);
+							}
+
+							c.requestArrangement();
+						}
+						return;
+					}
+				}
 				juce::NativeMessageBox::showMessageBox(juce::AlertWindow::InfoIcon, "Information", 
 					"The selected file contains more than one patch. Please add this file as a data source in the Patch Manager instead.\n\n"
 					"Go to the Patch Manager, right click the 'Data Sources' node and select 'Add File...' to import it."
@@ -437,15 +482,23 @@ namespace genericVirusUI
 			break;
 		case SaveType::Arrangement:
 			{
-				messages.push_back(getController().getMultiEditBuffer().data);
-
-				for(uint8_t i=0; i<16; ++i)
+				getController().onMultiReceived = [this, _fileType, _pathName]
 				{
-					const auto dump = getController().createSingleDump(i, toMidiByte(virusLib::BankNumber::EditBuffer), i);
-					messages.push_back(dump);
-				}
+					std::vector< std::vector<uint8_t> > messages;
+					messages.push_back(getController().getMultiEditBuffer().data);
+
+					for(uint8_t i=0; i<16; ++i)
+					{
+						const auto dump = getController().createSingleDump(i, toMidiByte(virusLib::BankNumber::EditBuffer), i);
+						messages.push_back(dump);
+						Editor::savePresets(_fileType, _pathName, messages);
+					}
+
+					getController().onMultiReceived = {};
+				};
+				getController().requestMulti(0, 0);
 			}
-			break;
+			return true;
 		default:
 			return false;
 		}
