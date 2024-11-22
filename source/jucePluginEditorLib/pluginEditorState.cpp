@@ -10,13 +10,13 @@
 
 #include "dsp56kEmu/logging.h"
 
-#include "jucePluginLib/tools.h"
-
 namespace jucePluginEditorLib
 {
 PluginEditorState::PluginEditorState(Processor& _processor, pluginLib::Controller& _controller, std::vector<Skin> _includedSkins)
 	: m_processor(_processor), m_parameterBinding(_controller), m_includedSkins(std::move(_includedSkins))
 {
+	juce::File(getSkinFolder()).createDirectory();
+
 	// point embedded skins to public data folder if they're not embedded
 	for (auto& skin : m_includedSkins)
 	{
@@ -94,9 +94,6 @@ std::string PluginEditorState::getSkinFolder() const
 
 bool PluginEditorState::loadSkin(const Skin& _skin, const uint32_t _fallbackIndex/* = 0*/)
 {
-	m_currentSkin = _skin;
-	writeSkinToConfig(_skin);
-
 	if (m_editor)
 	{
 		m_instanceConfig.clear();
@@ -134,6 +131,9 @@ bool PluginEditorState::loadSkin(const Skin& _skin, const uint32_t _fallbackInde
 		m_rootScale = editor->getScale();
 
 		m_editor->setTopLeftPosition(0, 0);
+
+		m_currentSkin = _skin;
+		writeSkinToConfig(_skin);
 
 		if(evSkinLoaded)
 			evSkinLoaded(m_editor.get());
@@ -187,12 +187,12 @@ void PluginEditorState::openMenu(const juce::MouseEvent* _event)
 
 	bool loadedSkinIsPartOfList = false;
 
-	std::set<std::string> knownSkinFolders;
+	std::set<std::pair<std::string, std::string>> knownSkins;	// folder, jsonFilename
 
-	auto addSkinEntry = [this, &skinMenu, &loadedSkinIsPartOfList, &knownSkinFolders](const Skin& _skin)
+	auto addSkinEntry = [this, &skinMenu, &loadedSkinIsPartOfList, &knownSkins](const Skin& _skin)
 	{
 		// remove dupes by folder
-		if(!_skin.folder.empty() && !knownSkinFolders.insert(_skin.folder).second)
+		if(!_skin.folder.empty() && !knownSkins.insert({_skin.folder, _skin.jsonFilename}).second)
 			return;
 
 		const auto isCurrent = _skin == getCurrentSkin();
