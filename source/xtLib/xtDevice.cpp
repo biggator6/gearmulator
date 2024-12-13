@@ -9,7 +9,7 @@ namespace mqLib
 
 namespace xt
 {
-	Device::Device() : m_wavePreview(m_xt), m_state(m_xt, m_wavePreview), m_sysexRemote(m_xt)
+	Device::Device(const synthLib::DeviceCreateParams& _params) : wLib::Device(_params), m_xt(_params.romData, _params.romName), m_wavePreview(m_xt), m_state(m_xt, m_wavePreview), m_sysexRemote(m_xt)
 	{
 		while(!m_xt.isBootCompleted())
 			m_xt.process(8);
@@ -79,6 +79,8 @@ namespace xt
 
 	void Device::processAudio(const synthLib::TAudioInputs& _inputs, const synthLib::TAudioOutputs& _outputs, size_t _samples)
 	{
+		m_state.process(static_cast<uint32_t>(_samples));
+
 		const float* inputs[2] = {_inputs[0], _inputs[1]};
 		float* outputs[4] = {_outputs[0], _outputs[1], _outputs[2], _outputs[3]};
 		m_xt.process(inputs, outputs, static_cast<uint32_t>(_samples), getExtraLatencySamples());

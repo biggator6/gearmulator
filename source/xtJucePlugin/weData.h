@@ -36,7 +36,7 @@ namespace xtJucePlugin
 		std::optional<xt::WaveData> getWave(xt::WaveId _waveId) const;
 		std::optional<xt::WaveData> getWave(xt::TableId _tableIndex, xt::TableIndex _indexInTable) const;
 
-		xt::WaveId getWaveIndex(xt::TableId _tableId, xt::TableIndex _tableIndex) const;
+		xt::WaveId getWaveId(xt::TableId _tableId, xt::TableIndex _tableIndex) const;
 
 		std::optional<xt::TableData> getTable(xt::TableId _tableId) const;
 		bool swapTableEntries(xt::TableId _tableId, xt::TableIndex _indexA, xt::TableIndex _indexB);
@@ -46,7 +46,7 @@ namespace xtJucePlugin
 		bool copyWave(xt::WaveId _dest, xt::WaveId _source);
 
 		bool setWave(xt::WaveId _id, const xt::WaveData& _data);
-		bool setTable(xt::TableId _index, const xt::TableData& _data);
+		bool setTable(xt::TableId _id, const xt::TableData& _data);
 
 		bool sendTableToDevice(xt::TableId _id) const;
 		bool sendWaveToDevice(xt::WaveId _id) const;
@@ -54,8 +54,8 @@ namespace xtJucePlugin
 		void getWaveDataForSingle(std::vector<xt::SysEx>& _results, const xt::SysEx& _single) const;
 
 	private:
-		bool requestWave(xt::WaveId _index);
-		bool requestTable(xt::TableId _index);
+		bool requestWave(xt::WaveId _id);
+		bool requestTable(xt::TableId _id);
 
 		void onAllDataReceived() const;
 
@@ -64,8 +64,16 @@ namespace xtJucePlugin
 		bool parseMidi(const std::vector<uint8_t>& _sysex);
 
 		std::string getRomCacheFilename() const;
+
 		void saveRomCache() const;
 		void loadRomCache();
+		void saveTable(xt::TableId _id) const;
+		void saveWave(xt::WaveId _id) const;
+
+		void loadUserData();
+
+		static std::string toFilename(xt::WaveId _id);
+		static std::string toFilename(xt::TableId _id);
 
 		Controller& m_controller;
 		const std::string m_cacheDir;

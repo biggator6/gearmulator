@@ -12,6 +12,7 @@ namespace xtJucePlugin
 	WaveEditorData::WaveEditorData(Controller& _controller, const std::string& _cacheDir) : m_controller(_controller), m_cacheDir(synthLib::validatePath(_cacheDir))
 	{
 		loadRomCache();
+		loadUserData();
 	}
 
 	void WaveEditorData::requestData()
@@ -103,7 +104,7 @@ namespace xtJucePlugin
 		return m_ramWaves[i];
 	}
 
-	xt::WaveId WaveEditorData::getWaveIndex(const xt::TableId _tableId, const xt::TableIndex _tableIndex) const
+	xt::WaveId WaveEditorData::getWaveId(const xt::TableId _tableId, const xt::TableIndex _tableIndex) const
 	{
 		if(_tableId.rawId() >= m_tables.size())
 			return g_invalidWaveIndex;
@@ -135,6 +136,7 @@ namespace xtJucePlugin
 		std::swap(t[_indexA.rawId()], t[_indexB.rawId()]);
 		m_tables[_tableId.rawId()] = t;
 		onTableChanged(_tableId);
+		saveTable(_tableId);
 		return true;
 	}
 
@@ -153,6 +155,7 @@ namespace xtJucePlugin
 		t[_tableIndex.rawId()] = _waveId;
 		m_tables[_tableId.rawId()] = t;
 		onTableChanged(_tableId);
+		saveTable(_tableId);
 		return true;
 	}
 
@@ -169,6 +172,7 @@ namespace xtJucePlugin
 			return false;
 		m_tables[dst] = *srcTable;
 		onTableChanged(_dest);
+		saveTable(_dest);
 		return true;
 	}
 
@@ -182,7 +186,7 @@ namespace xtJucePlugin
 
 	std::optional<xt::WaveData> WaveEditorData::getWave(const xt::TableId _tableIndex, const xt::TableIndex _indexInTable) const
 	{
-		return getWave(getWaveIndex(_tableIndex, _indexInTable));
+		return getWave(getWaveId(_tableIndex, _indexInTable));
 	}
 
 	bool WaveEditorData::setWave(xt::WaveId _id, const xt::WaveData& _data)
@@ -195,6 +199,7 @@ namespace xtJucePlugin
 			onWaveChanged(_id);
 			return true;
 		}
+
 		if(i < xt::wave::g_firstRamWaveIndex)
 			return false;
 
@@ -205,16 +210,18 @@ namespace xtJucePlugin
 
 		m_ramWaves[i] = _data;
 		onWaveChanged(_id);
+		saveWave(_id);
 		return true;
 	}
 
-	bool WaveEditorData::setTable(xt::TableId _index, const xt::TableData& _data)
+	bool WaveEditorData::setTable(const xt::TableId _id, const xt::TableData& _data)
 	{
-		if(_index.rawId() >= m_tables.size())
+		if(_id.rawId() >= m_tables.size())
 			return false;
 
-		m_tables[_index.rawId()] = _data;
-		onTableChanged(_index);
+		m_tables[_id.rawId()] = _data;
+		onTableChanged(_id);
+		saveTable(_id);
 		return true;
 	}
 
@@ -239,57 +246,6 @@ namespace xtJucePlugin
 			return false;
 		const auto sysex = xt::State::createWaveData(*wave, _id.rawId(), false);
 		m_controller.sendSysEx(sysex);
-
-		// if a wave is edited that is part of the current wavetable of a patch, that table has to be sent again too because the device doesn't update otherwise
-		std::set<xt::TableId> dirtyTableIds;
-
-		auto checkTableForPart = [this, _id, &dirtyTableIds](uint8_t p)
-		{
-			const auto* param = m_controller.getParameter("Wave", p);
-			const auto tableId = xt::TableId(static_cast<uint16_t>(param->getUnnormalizedValue()));
-			const auto& table = getTable(tableId);
-			if(!table)
-				return;
-			const auto& t = *table;
-			for (auto waveId : t)
-			{
-				if(waveId == _id)
-				{
-					dirtyTableIds.insert(tableId);
-					break;
-				}
-			}
-		};
-
-		if(m_controller.isMultiMode())
-		{
-			for(uint8_t p=0; p<m_controller.getPartCount(); ++p)
-				checkTableForPart(p);
-		}
-		else
-		{
-			checkTableForPart(m_controller.getCurrentPart());
-		}
-
-		juce::Timer::callAfterDelay(1000, [this, dirtyTableIds]
-		{
-			for (const auto& id : dirtyTableIds)
-			{
-				// this is super annyoing. Some kind of dirty mechanism seems to prevent that the wavetable is rebuilt even if we send it again
-				// So far the only way to prevent that is to send the table twice, once with another starting wave and then again with the correct
-				// one
-				const auto waveId = getWaveIndex(id, xt::TableIndex(0));
-				const_cast<WaveEditorData*>(this)->setTableWave(id, xt::TableIndex(0), xt::WaveId(waveId.rawId() > 1000 ? 1000 : 1001));
-				sendTableToDevice(id);
-
-				juce::Timer::callAfterDelay(1000, [this, id, waveId]
-				{
-					const_cast<WaveEditorData*>(this)->setTableWave(id, xt::TableIndex(0), waveId);
-					sendTableToDevice(id);
-				});
-			}
-		});
-
 		return true;
 	}
 
@@ -327,25 +283,25 @@ namespace xtJucePlugin
 		_results.emplace_back(xt::State::createTableData(t, tableId.rawId(), false));
 	}
 
-	bool WaveEditorData::requestWave(const xt::WaveId _index)
+	bool WaveEditorData::requestWave(const xt::WaveId _id)
 	{
 		if(isWaitingForData())
 			return false;
 
-		if(!m_controller.requestWave(_index.rawId()))
+		if(!m_controller.requestWave(_id.rawId()))
 			return false;
-		m_currentWaveRequestIndex = _index;
+		m_currentWaveRequestIndex = _id;
 		return true;
 	}
 
-	bool WaveEditorData::requestTable(const xt::TableId _index)
+	bool WaveEditorData::requestTable(const xt::TableId _id)
 	{
 		if(isWaitingForData())
 			return false;
 
-		if(!m_controller.requestTable(_index.rawId()))
+		if(!m_controller.requestTable(_id.rawId()))
 			return false;
-		m_currentTableRequestIndex = _index;
+		m_currentTableRequestIndex = _id;
 		return true;
 	}
 
@@ -462,5 +418,72 @@ namespace xtJucePlugin
 		synthLib::MidiToSysex::splitMultipleSysex(sysexMessages, data);
 		for (const auto& sysex : sysexMessages)
 			parseMidi(sysex);
+	}
+
+	void WaveEditorData::saveTable(const xt::TableId _id) const
+	{
+		if (xt::wave::isReadOnly(_id))
+			return;	// we don't want to store rom tables
+
+		const auto table = getTable(_id);
+		if (!table)
+			return;
+
+		const auto filename = toFilename(_id);
+		const auto data = xt::State::createTableData(*table, _id.rawId(), true);
+		synthLib::writeFile(m_cacheDir + filename, data);
+	}
+
+	void WaveEditorData::saveWave(const xt::WaveId _id) const
+	{
+		if (xt::wave::isReadOnly(_id))
+			return;	// we don't want to store rom waves
+
+		const auto wave = getWave(_id);
+		if (!wave)
+			return;
+
+		const auto filename = toFilename(_id);
+		const auto data = xt::State::createWaveData(*wave, _id.rawId(), true);
+		synthLib::writeFile(m_cacheDir + filename, data);
+	}
+
+	void WaveEditorData::loadUserData()
+	{
+		for (uint16_t i = 0; i < static_cast<uint16_t>(m_ramWaves.size()); ++i)
+		{
+			const auto id = xt::WaveId(i + xt::wave::g_firstRamWaveIndex);
+			const auto filename = toFilename(id);
+			std::vector<uint8_t> data;
+			if (!synthLib::readFile(data, m_cacheDir + filename))
+				continue;
+			xt::WaveData wave;
+			if (xt::State::parseWaveData(wave, data))
+				m_ramWaves[i] = wave;
+		}
+
+		for (uint16_t i = xt::wave::g_firstRamTableIndex; i < xt::wave::g_tableCount; ++i)
+		{
+			const auto id = xt::TableId(i);
+			const auto filename = toFilename(id);
+			std::vector<uint8_t> data;
+			if (!synthLib::readFile(data, m_cacheDir + filename))
+				continue;
+			xt::TableData table;
+			if (xt::State::parseTableData(table, data))
+				m_tables[i] = table;
+		}
+	}
+
+	std::string WaveEditorData::toFilename(const xt::WaveId _id)
+	{
+		return "wave_" + std::to_string(_id.rawId()) + ".syx";
+	}
+
+	std::string WaveEditorData::toFilename(const xt::TableId _id)
+	{
+		std::stringstream ss;
+		ss << "table_" << std::setw(3) << std::setfill('0') << _id.rawId() << ".syx";
+		return ss.str();
 	}
 }

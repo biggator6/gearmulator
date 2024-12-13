@@ -47,7 +47,7 @@ namespace n2xJucePlugin
 		return false;
 	}
 
-	pluginLib::patchDB::PatchPtr PatchManager::initializePatch(pluginLib::patchDB::Data&& _sysex)
+	pluginLib::patchDB::PatchPtr PatchManager::initializePatch(pluginLib::patchDB::Data&& _sysex, const std::string& _defaultPatchName)
 	{
 		if(!isValidPatchDump(_sysex))
 			return {};
@@ -82,7 +82,7 @@ namespace n2xJucePlugin
 				p->tags.add(pluginLib::patchDB::TagType::Tag, "Mono");
 		}
 
-		p->name = getPatchName(_sysex);
+		p->name = getPatchName(_sysex, _defaultPatchName);
 		p->sysex = std::move(_sysex);
 		p->program = program;
 		p->bank = bank;
@@ -94,7 +94,7 @@ namespace n2xJucePlugin
 		return p;
 	}
 
-	pluginLib::patchDB::Data PatchManager::prepareSave(const pluginLib::patchDB::PatchPtr& _patch) const
+	pluginLib::patchDB::Data PatchManager::applyModifications(const pluginLib::patchDB::PatchPtr& _patch) const
 	{
 		auto d = n2x::State::stripPatchName(_patch->sysex);
 
@@ -120,11 +120,6 @@ namespace n2xJucePlugin
 		return m_controller.getCurrentPart();
 	}
 
-	bool PatchManager::activatePatch(const pluginLib::patchDB::PatchPtr& _patch)
-	{
-		return activatePatch(_patch, getCurrentPart());
-	}
-
 	bool PatchManager::activatePatch(const pluginLib::patchDB::PatchPtr& _patch, const uint32_t _part)
 	{
 		if(!m_controller.activatePatch(_patch->sysex, _part))
@@ -139,16 +134,19 @@ namespace n2xJucePlugin
 		return jucePluginEditorLib::patchManager::PatchManager::parseFileData(_results, _data);
 	}
 
-	std::string PatchManager::getPatchName(const pluginLib::patchDB::Data& _sysex)
+	std::string PatchManager::getPatchName(const pluginLib::patchDB::Data& _sysex, const std::string& _defaultPatchName/* = {}*/)
 	{
 		if(!isValidPatchDump(_sysex))
-			return {};
+			return _defaultPatchName;
 
 		{
 			const auto nameFromDump = n2x::State::extractPatchName(_sysex);
 			if(!nameFromDump.empty())
 				return nameFromDump;
 		}
+
+		if (!_defaultPatchName.empty())
+			return _defaultPatchName;
 
 		const auto isSingle = n2x::State::isSingleDump(_sysex);
 

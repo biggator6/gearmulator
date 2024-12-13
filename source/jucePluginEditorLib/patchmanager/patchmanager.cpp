@@ -18,7 +18,11 @@
 #include "jucePluginLib/types.h"
 #include "jucePluginLib/clipboard.h"
 
+#include "jucePluginEditorLib/filetype.h"
+
 #include "dsp56kEmu/logging.h"
+
+#include "synthLib/os.h"
 
 #if JUCE_MAJOR_VERSION < 8	// they forgot this include but fixed it in version 8+
 #include "juce_gui_extra/misc/juce_ColourSelector.h"
@@ -604,7 +608,7 @@ namespace jucePluginEditorLib::patchManager
 		g.fillAll(juce::Colour(0,0,0));
 	}
 
-	void PatchManager::exportPresets(const juce::File& _file, const std::vector<pluginLib::patchDB::PatchPtr>& _patches, FileType _fileType) const
+	void PatchManager::exportPresets(const juce::File& _file, const std::vector<pluginLib::patchDB::PatchPtr>& _patches, const FileType& _fileType) const
 	{
 #if SYNTHLIB_DEMO_MODE
 		getEditor().showDemoRestrictionMessageBox();
@@ -615,7 +619,7 @@ namespace jucePluginEditorLib::patchManager
 		std::vector<pluginLib::patchDB::Data> patchData;
 		for (const auto& patch : _patches)
 		{
-			const auto patchSysex = prepareSave(patch);
+			const auto patchSysex = applyModifications(patch);
 
 			if(!patchSysex.empty())
 				patchData.push_back(patchSysex);
@@ -626,7 +630,7 @@ namespace jucePluginEditorLib::patchManager
 #endif
 	}
 
-	bool PatchManager::exportPresets(std::vector<pluginLib::patchDB::PatchPtr>&& _patches, FileType _fileType) const
+	bool PatchManager::exportPresets(std::vector<pluginLib::patchDB::PatchPtr>&& _patches, const FileType& _fileType) const
 	{
 		if(_patches.size() > 128)
 		{
@@ -758,9 +762,11 @@ namespace jucePluginEditorLib::patchManager
 			if(!loadFile(results, file) || results.empty())
 				continue;
 
+			const auto defaultName = results.size() == 1 ? synthLib::stripExtension(synthLib::getFilenameWithoutPath(file)) : "";
+
 			for (auto& result : results)
 			{
-				if(const auto patch = initializePatch(std::move(result)))
+				if(const auto patch = initializePatch(std::move(result), defaultName))
 					patches.push_back(patch);
 			}
 		}
@@ -823,7 +829,7 @@ namespace jucePluginEditorLib::patchManager
 		pluginLib::patchDB::Data data;
 		if(!requestPatchForPart(data, _part, 0))
 			return;
-		const auto patch = initializePatch(std::move(data));
+		const auto patch = initializePatch(std::move(data), {});
 		if(!patch)
 			return;
 		updateStateAsync(_part, patch);
@@ -1032,7 +1038,7 @@ namespace jucePluginEditorLib::patchManager
 
 		for (auto& result : data.sysex)
 		{
-			if(const auto patch = initializePatch(std::move(result)))
+			if(const auto patch = initializePatch(std::move(result), {}))
 				patches.push_back(patch);
 		}
 
@@ -1064,7 +1070,7 @@ namespace jucePluginEditorLib::patchManager
 		if(!_patch)
 			return {};
 
-		const auto data = prepareSave(_patch);
+		const auto data = applyModifications(_patch);
 
 		return pluginLib::Clipboard::createJsonString(m_editor.getProcessor(), {}, {}, data);
 	}

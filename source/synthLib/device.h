@@ -2,19 +2,35 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <string>
 
 #include "audioTypes.h"
 #include "deviceTypes.h"
 
 #include "midiTypes.h"
 #include "buildconfig.h"
+#include "midiTranslator.h"
+
+#include "asmjit/core/api-config.h"
+
+#include "baseLib/md5.h"
 
 namespace synthLib
 {
+	struct DeviceCreateParams
+	{
+		float preferredSamplerate = 0.0f;
+		float hostSamplerate = 0.0f;
+		std::string romName;
+		std::vector<uint8_t> romData;
+		baseLib::MD5 romHash;
+		uint32_t customData = 0;
+	};
+
 	class Device
 	{
 	public:
-		Device();
+		Device(const DeviceCreateParams& _params);
 		Device(const Device&) = delete;
 		Device(Device&&) = delete;
 
@@ -31,14 +47,14 @@ namespace synthLib
 		virtual uint32_t getInternalLatencyMidiToOutput() const { return 0; }
 		virtual uint32_t getInternalLatencyInputToOutput() const { return 0; }
 
-		virtual std::vector<float> getSupportedSamplerates() const
+		virtual void getSupportedSamplerates(std::vector<float>& _dst) const
 		{
-			return {getSamplerate()};
+			_dst.push_back(getSamplerate());
 		}
 		virtual float getSamplerate() const = 0;
-		virtual std::vector<float> getPreferredSamplerates() const
+		virtual void getPreferredSamplerates(std::vector<float>& _dst) const
 		{
-			return getSupportedSamplerates();
+			return getSupportedSamplerates(_dst);
 		}
 
 		bool isSamplerateSupported(const float& _samplerate) const;
@@ -47,6 +63,9 @@ namespace synthLib
 
 		float getDeviceSamplerate(float _preferredDeviceSamplerate, float _hostSamplerate) const;
 		float getDeviceSamplerateForHostSamplerate(float _hostSamplerate) const;
+
+		auto& getDeviceCreateParams() { return m_createParams; }
+		const auto& getDeviceCreateParams() const { return m_createParams; }
 
 		virtual bool isValid() const = 0;
 
@@ -63,15 +82,25 @@ namespace synthLib
 		virtual uint32_t getDspClockPercent() const = 0;
 		virtual uint64_t getDspClockHz() const = 0;
 
+
+		ASMJIT_NOINLINE virtual void release(std::vector<SMidiEvent>& _events);
+
+		auto& getMidiTranslator() { return m_midiTranslator; }
+
 	protected:
 		virtual void readMidiOut(std::vector<SMidiEvent>& _midiOut) = 0;
 		virtual void processAudio(const TAudioInputs& _inputs, const TAudioOutputs& _outputs, size_t _samples) = 0;
 		virtual bool sendMidi(const SMidiEvent& _ev, std::vector<SMidiEvent>& _response) = 0;
 
 		void dummyProcess(uint32_t _numSamples);
-	
+
 	private:
+		DeviceCreateParams m_createParams;
 		std::vector<SMidiEvent> m_midiIn;
+
 		uint32_t m_extraLatency = 0;
+
+		MidiTranslator m_midiTranslator;
+		std::vector<SMidiEvent> m_translatorOut;
 	};
 }

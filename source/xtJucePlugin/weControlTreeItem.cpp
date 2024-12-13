@@ -55,7 +55,7 @@ namespace xtJucePlugin
 		if(m_table == _table && !_tableHasChanged)
 			return;
 		m_table = _table;
-		setWave(m_editor.getData().getWaveIndex(_table, m_index));
+		setWave(m_editor.getData().getWaveId(_table, m_index));
 	}
 
 	juce::var ControlTreeItem::getDragSourceDescription()
@@ -117,7 +117,8 @@ namespace xtJucePlugin
 
 		menu.addItem("Remove", [this]
 		{
-			m_editor.getData().setTableWave(m_table, m_index, g_invalidWaveIndex);
+			if (m_editor.getData().setTableWave(m_table, m_index, g_invalidWaveIndex))
+				m_editor.getData().sendTableToDevice(m_table);
 		});
 		menu.addItem("Select Wave", [this]
 		{

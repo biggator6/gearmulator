@@ -15,9 +15,10 @@
 
 namespace virusLib
 {
-	Device::Device(ROMFile _rom, const float _preferredDeviceSamplerate, const float _hostSamplerate, const bool _createDebugger/* = false*/)
-		: m_rom(std::move(_rom))
-		, m_samplerate(getDeviceSamplerate(_preferredDeviceSamplerate, _hostSamplerate))
+	Device::Device(const synthLib::DeviceCreateParams& _params, const bool _createDebugger/* = false*/)
+		: synthLib::Device(_params)
+		, m_rom(_params.romData, _params.romName, static_cast<DeviceModel>(_params.customData))
+		, m_samplerate(getDeviceSamplerate(_params.preferredSamplerate, _params.hostSamplerate))
 	{
 		m_frontpanelStateMidiEvent.source = synthLib::MidiEventSource::Internal;
 
@@ -76,7 +77,7 @@ namespace virusLib
 		m_dsp.reset();
 	}
 
-	std::vector<float> Device::getSupportedSamplerates() const
+	void Device::getSupportedSamplerates(std::vector<float>& _dst) const
 	{
 		switch (m_rom.getModel())
 		{
@@ -84,25 +85,35 @@ namespace virusLib
 		case DeviceModel::A:
 		case DeviceModel::B:
 		case DeviceModel::C:
-			return {12000000.0f / 256.0f};
+			_dst.push_back(12000000.0f / 256.0f);
+			break;
 		case DeviceModel::Snow:
 		case DeviceModel::TI:
 		case DeviceModel::TI2:
-			return {32000.0f, 44100.0f, 48000.0f, 64000.0f, 88200.0f, 96000.0f};
+			_dst.push_back(32000.0f);
+			_dst.push_back(44100.0f);
+			_dst.push_back(48000.0f);
+			_dst.push_back(64000.0f);
+			_dst.push_back(88200.0f);
+			_dst.push_back(96000.0f);
+			break;
 		}
 	}
 
-	std::vector<float> Device::getPreferredSamplerates() const
+	void Device::getPreferredSamplerates(std::vector<float>& _dst) const
 	{
 		switch (m_rom.getModel())
 		{
 		default:
 		case DeviceModel::ABC:
-			return getSupportedSamplerates();
+			getSupportedSamplerates(_dst);
+			break;
 		case DeviceModel::Snow:
 		case DeviceModel::TI:
 		case DeviceModel::TI2:
-			return {44100.0f, 48000.0f};
+			_dst.push_back(44100.0f);
+			_dst.push_back(48000.0f);
+			break;
 		}
 	}
 
@@ -355,7 +366,7 @@ namespace virusLib
 				// pack into sysex
 				std::vector<uint8_t>& sysex = _sysexPresets.emplace_back(std::vector<uint8_t>{0xf0, 0x00, 0x20, 0x33, 0x01, OMNI_DEVICE_ID, 0x10, 0x01, programIndex});
 				sysex.insert(sysex.end(), _data.begin() + pos, _data.begin() + pos + presetSize);
-				sysex.push_back(Microcontroller::calcChecksum(sysex, 5));
+				sysex.push_back(Microcontroller::calcChecksum(sysex));
 				sysex.push_back(0xf7);
 
 				++numFound;
@@ -410,10 +421,10 @@ namespace virusLib
 
 			for(size_t j=0; j<256; ++j)
 				sysex.push_back(preset[j]);
-			sysex.push_back(Microcontroller::calcChecksum(sysex, 5));
+			sysex.push_back(Microcontroller::calcChecksum(sysex));
 			for(size_t j=256; j<512; ++j)
 				sysex.push_back(preset[j]);
-			sysex.push_back(Microcontroller::calcChecksum(sysex, 5));
+			sysex.push_back(Microcontroller::calcChecksum(sysex));
 			sysex.push_back(0xf7);
 
 			++presetIdx;

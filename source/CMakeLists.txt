@@ -18,6 +18,10 @@ add_custom_target(cmakeScripts SOURCES
 	skins.h.in
 	../base.cmake)
 
+# ----------------- Tools
+
+add_subdirectory(changelogGenerator)
+
 # ----------------- DSP56300 emulator
 
 set(ASMJIT_STATIC TRUE)
@@ -34,6 +38,12 @@ add_subdirectory(libresample)
 
 include(macsetup.cmake)
 include(skins.cmake)
+
+# ----------------- network bridge
+
+add_subdirectory(ptypes EXCLUDE_FROM_ALL)
+add_subdirectory(networkLib EXCLUDE_FROM_ALL)
+add_subdirectory(bridge)
 
 # ----------------- Try to install VST2 SDK
 
