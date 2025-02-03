@@ -13,7 +13,6 @@ set(SOURCES
 	controller.cpp controller.h
 	controllermap.cpp controllermap.h
 	dummydevice.cpp dummydevice.h
-	event.cpp event.h
 	midipacket.cpp midipacket.h
 	midiports.cpp midiports.h
 	parameter.cpp parameter.h
@@ -69,3 +68,9 @@ add_custom_command(
 )
 
 target_include_directories(jucePluginLib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
+
+if(UNIX AND NOT APPLE)
+	set(THREADS_PREFER_PTHREAD_FLAG TRUE)
+	find_package(Threads REQUIRED)
+	target_link_libraries(jucePluginLib PRIVATE Threads::Threads)
+endif()

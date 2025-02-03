@@ -23,7 +23,7 @@ set(SOURCES
 target_sources(n2xLib PRIVATE ${SOURCES})
 source_group("source" FILES ${SOURCES})
 
-target_link_libraries(n2xLib PUBLIC synthLib 68kEmu hardwareLib)
+target_link_libraries(n2xLib PUBLIC hardwareLib)
 
 if(DSP56300_DEBUGGER)
 	target_link_libraries(n2xLib PUBLIC dsp56kDebugger)
@@ -32,3 +32,6 @@ endif()
 set_property(TARGET n2xLib PROPERTY FOLDER "N2x")
 
 target_include_directories(n2xLib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
+
+#target_compile_options(n2xLib PRIVATE -fsanitize=thread)
+#target_link_options(n2xLib PUBLIC -fsanitize=thread)

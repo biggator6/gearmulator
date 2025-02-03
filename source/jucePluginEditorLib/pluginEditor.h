@@ -8,7 +8,8 @@
 
 #include "synthLib/buildconfig.h"
 
-#include "jucePluginLib/event.h"
+#include "baseLib/event.h"
+
 #include "jucePluginLib/types.h"
 
 namespace baseLib
@@ -37,7 +38,7 @@ namespace jucePluginEditorLib
 	class Editor : public genericUI::Editor, genericUI::EditorInterface
 	{
 	public:
-		pluginLib::Event<Editor*, juce::MouseEvent*> onOpenMenu;
+		baseLib::Event<Editor*, juce::MouseEvent*> onOpenMenu;
 
 		Editor(Processor& _processor, pluginLib::ParameterBinding& _binding, Skin _skin);
 		~Editor() override;
@@ -110,6 +111,7 @@ namespace jucePluginEditorLib
 		bool bindParameter(juce::Button& _target, int _parameterIndex) override;
 		bool bindParameter(juce::ComboBox& _target, int _parameterIndex) override;
 		bool bindParameter(juce::Slider& _target, int _parameterIndex) override;
+		bool bindParameter(juce::Label& _target, int _parameterIndex) override;
 		juce::Value* getParameterValue(int _parameterIndex, uint8_t _part) override;
 
 		Processor& m_processor;

@@ -2,7 +2,6 @@
 
 #include "juce_gui_basics/juce_gui_basics.h"
 
-#include "event.h"
 #include "parameterlistener.h"
 
 namespace juce
@@ -48,8 +47,8 @@ namespace pluginLib
 			size_t softknobTargetChangedListenerId = ParameterListener::InvalidListenerId;
 		};
 
-		Event<BoundParameter> onBind;
-		Event<BoundParameter> onUnbind;
+		baseLib::Event<BoundParameter> onBind;
+		baseLib::Event<BoundParameter> onUnbind;
 
 		ParameterBinding(Controller& _controller) : m_controller(_controller)
 		{
@@ -58,10 +57,12 @@ namespace pluginLib
 
 		void bind(juce::Slider& _control, uint32_t _param);
 		void bind(juce::Slider& _control, uint32_t _param, uint8_t _part);
-		void bind(juce::ComboBox &_control, uint32_t _param);
-		void bind(juce::ComboBox &_control, uint32_t _param, uint8_t _part);
-		void bind(juce::Button &_control, uint32_t _param);
-		void bind(juce::Button &_control, uint32_t _param, uint8_t _part);
+		void bind(juce::ComboBox& _control, uint32_t _param);
+		void bind(juce::ComboBox& _control, uint32_t _param, uint8_t _part);
+		void bind(juce::Button& _control, uint32_t _param);
+		void bind(juce::Button& _control, uint32_t _param, uint8_t _part);
+		void bind(juce::Label& _control, uint32_t _param);
+		void bind(juce::Label& _control, uint32_t _param, uint8_t _part);
 
 		bool bind(juce::Component& _component, uint32_t _param, uint8_t _part);
 
