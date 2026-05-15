@@ -8,7 +8,7 @@
 
 #include "synthLib/midiToSysex.h"
 #include "synthLib/midiBufferParser.h"
-#include "dsp56kEmu/logging.h"
+#include "dsp56kBase/logging.h"
 
 namespace mqLib
 {
@@ -20,7 +20,7 @@ namespace mqLib
 
 	bool State::loadState(const SysEx& _sysex)
 	{
-		std::vector<std::vector<uint8_t>> messages;
+		synthLib::SysexBufferList messages;
 		synthLib::MidiToSysex::splitMultipleSysex(messages, _sysex);
 
 		if(messages.empty())
@@ -141,7 +141,7 @@ namespace mqLib
 		requestGlobal();
 //		m_mq.sendMidi({0xf0, IdWaldorf, IdMicroQ, IdDeviceOmni, static_cast<uint8_t>(SysexCommand::ModeRequest), 0xf7});
 
-		synthLib::MidiBufferParser parser;
+		synthLib::MidiBufferParser parser(synthLib::MidiEventSource::Device);
 		Responses unused;
 		std::vector<uint8_t> midi;
 		std::vector<synthLib::SMidiEvent> events;
@@ -209,32 +209,36 @@ namespace mqLib
 
 	bool State::getState(std::vector<uint8_t>& _state, synthLib::StateType _type) const
 	{
-		append(_state, m_global);
+		SysEx sysexState;
+		
+		append(sysexState, m_global);
 
 		const auto isMultiMode = getGlobalParameter(GlobalParameter::SingleMultiMode) != 0;
 
-//		append(_state, m_currentDrumMap);
+//		append(sysexState, m_currentDrumMap);
 
-		append(_state, m_currentMulti);
+		append(sysexState, m_currentMulti);
 
 		for(size_t i=0; i<m_currentMultiSingles.size(); ++i)
 		{
 			const auto& s = (isMultiMode || i >= m_currentInstrumentSingles.size()) ? m_currentMultiSingles[i] : m_currentInstrumentSingles[i];
-			append(_state, s);
+			append(sysexState, s);
 		}
 
 //		for (const auto& s : m_currentDrumMapSingles)
-//			append(_state, s);
+//			append(sysexState, s);
 
+		_state.insert(_state.end(), sysexState.begin(), sysexState.end());
 		return !_state.empty();
 	}
 
 	bool State::setState(const std::vector<uint8_t>& _state, synthLib::StateType _type)
 	{
-		return loadState(_state);
+		SysEx sysexBuf(_state.begin(), _state.end());
+		return loadState(sysexBuf);
 	}
 
-	bool State::setSingleName(std::vector<uint8_t>& _sysex, const std::string& _name)
+	bool State::setSingleName(SysEx& _sysex, const std::string& _name)
 	{
 		if (getCommand(_sysex) != SysexCommand::SingleDump)
 			return false;
@@ -254,7 +258,7 @@ namespace mqLib
 		return false;
 	}
 
-	bool State::setCategory(std::vector<uint8_t>& _sysex, const std::string& _name)
+	bool State::setCategory(SysEx& _sysex, const std::string& _name)
 	{
 		if (getCommand(_sysex) != SysexCommand::SingleDump)
 			return false;
@@ -744,7 +748,7 @@ namespace mqLib
 
 	inline void State::sendMulti(const std::vector<uint8_t>& _multiData) const
 	{
-		std::vector<uint8_t> data = { 0xf0, wLib::IdWaldorf, IdMicroQ, wLib::IdDeviceOmni, static_cast<uint8_t>(SysexCommand::MultiDump), static_cast<uint8_t>(MidiBufferNum::DeprecatedMultiBankInternal), 0};
+		synthLib::SysexBuffer data = { 0xf0, wLib::IdWaldorf, IdMicroQ, wLib::IdDeviceOmni, static_cast<uint8_t>(SysexCommand::MultiDump), static_cast<uint8_t>(MidiBufferNum::DeprecatedMultiBankInternal), 0};
 		data.insert(data.end(), _multiData.begin(), _multiData.end());
 
 		uint8_t checksum = 0;

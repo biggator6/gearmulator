@@ -37,7 +37,7 @@ namespace n2xJucePlugin
 		bool parseMultiDump(const pluginLib::SysEx& _msg);
 		bool parseControllerMessage(const synthLib::SMidiEvent&) override;
 
-		void sendParameterChange(const pluginLib::Parameter& _parameter, pluginLib::ParamValue _value) override;
+		void sendParameterChange(const pluginLib::Parameter& _parameter, pluginLib::ParamValue _value, pluginLib::Parameter::Origin _origin) override;
 
 		void setSingleParameter(uint8_t _part, n2x::SingleParam _sp, uint8_t _value);
 		void setMultiParameter(n2x::MultiParam _mp, uint8_t _value);
@@ -48,10 +48,10 @@ namespace n2xJucePlugin
 
 		void requestDump(uint8_t _bank, uint8_t _patch) const;
 
-		std::vector<uint8_t> createSingleDump(uint8_t _bank, uint8_t _program, uint8_t _part) const;
-		std::vector<uint8_t> createMultiDump(n2x::SysexByte _bank, uint8_t _program);
+		synthLib::SysexBuffer createSingleDump(uint8_t _bank, uint8_t _program, uint8_t _part) const;
+		synthLib::SysexBuffer createMultiDump(n2x::SysexByte _bank, uint8_t _program);
 
-		bool activatePatch(const std::vector<uint8_t>& _sysex, uint32_t _part);
+		bool activatePatch(const synthLib::SysexBuffer& _sysex, uint32_t _part);
 
 		bool isDerivedParameter(pluginLib::Parameter& _derived, pluginLib::Parameter& _base) const override;
 
@@ -61,6 +61,8 @@ namespace n2xJucePlugin
 		using pluginLib::Controller::sendSysEx;
 
 		bool getKnobState(uint8_t& _result, n2x::KnobType _type) const;
+
+		std::vector<uint8_t> getPartsForMidiChannel(uint8_t _channel) override;
 
 	private:
 		uint8_t combineSyncRingModDistortion(uint8_t _part, uint8_t _currentCombinedValue, bool _lockedOnly);

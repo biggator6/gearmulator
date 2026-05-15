@@ -7,7 +7,7 @@
 #include "unpacker.h"
 
 #include "dsp56kEmu/dsp.h"
-#include "dsp56kEmu/logging.h"
+#include "dsp56kBase/logging.h"
 
 #include <cstring>	// memcpy
 
@@ -297,7 +297,9 @@ bool ROMFile::loadPresetFile(std::istream& _file, DeviceModel _model)
 		_file.read(reinterpret_cast<char*>(&single), sizeof(single));
 		m_singles.emplace_back(single);
 
+#ifdef _DEBUG
 		LOG("Loaded single " << i << ", name = " << getSingleName(single));
+#endif
 	}
 
 	if(multiCount)
@@ -311,7 +313,9 @@ bool ROMFile::loadPresetFile(std::istream& _file, DeviceModel _model)
 			_file.read(reinterpret_cast<char*>(&multi), sizeof(multi));
 			m_multis.emplace_back(multi);
 
+#ifdef _DEBUG
 			LOG("Loaded multi " << i << ", name = " << getMultiName(multi));
+#endif
 		}
 	}
 

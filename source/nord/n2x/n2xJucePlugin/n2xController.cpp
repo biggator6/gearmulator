@@ -5,7 +5,7 @@
 #include "n2xPatchManager.h"
 #include "n2xPluginProcessor.h"
 
-#include "dsp56kEmu/logging.h"
+#include "dsp56kBase/logging.h"
 
 #include "n2xLib/n2xmiditypes.h"
 
@@ -106,7 +106,7 @@ namespace n2xJucePlugin
 
 		if(bank == n2x::SysexByte::SingleDumpBankEditBuffer && program < getPartCount())
 		{
-			m_state.receive(_msg, synthLib::MidiEventSource::Plugin);
+			m_state.receive(_msg, synthLib::MidiEventSource::Device);
 			applyPatchParameters(params, program);
 			onProgramChanged();
 			return true;
@@ -133,7 +133,7 @@ namespace n2xJucePlugin
 		if(bank != n2x::SysexByte::MultiDumpBankEditBuffer)
 			return false;
 
-		m_state.receive(_msg, synthLib::MidiEventSource::Plugin);
+		m_state.receive(_msg, synthLib::MidiEventSource::Device);
 
 		applyPatchParameters(params, 0);
 
@@ -152,7 +152,7 @@ namespace n2xJucePlugin
 	bool Controller::parseControllerMessage(const synthLib::SMidiEvent& _e)
 	{
 		const auto& cm = getParameterDescriptions().getControllerMap();
-		const auto paramIndices = cm.getControlledParameters(_e);
+		const auto paramIndices = cm.getParameters(_e);
 
 		if(paramIndices.empty())
 			return false;
@@ -161,7 +161,7 @@ namespace n2xJucePlugin
 
 		m_state.receive(_e);
 
-		const auto parts = m_state.getPartsForMidiChannel(_e);
+		const auto parts = getPartsForMidiEvent(_e);
 
 		for (const uint8_t part : parts)
 		{
@@ -189,7 +189,7 @@ namespace n2xJucePlugin
 		return true;
 	}
 
-	void Controller::sendParameterChange(const pluginLib::Parameter& _parameter, pluginLib::ParamValue _value)
+	void Controller::sendParameterChange(const pluginLib::Parameter& _parameter, pluginLib::ParamValue _value, pluginLib::Parameter::Origin _origin)
 	{
 		if(_parameter.getDescription().page >= g_multiPage)
 		{
@@ -210,15 +210,15 @@ namespace n2xJucePlugin
 		if(!getParameterDescriptions().getIndexByName(descIndex, _parameter.getDescription().name))
 			assert(false && "parameter not found");
 
-		const auto& ccs = controllerMap.getControlChanges(synthLib::M_CONTROLCHANGE, descIndex);
-		if(ccs.empty())
+		const auto& ccs = controllerMap.getControlTypes(synthLib::M_CONTROLCHANGE, descIndex);
+		if (ccs.empty() || singleParam == n2x::FilterType)	// "secret" filter type can only be changed by sysex
 		{
 			nonConstParam.setRateLimitMilliseconds(sysexRateLimitMs);
 			setSingleParameter(part, singleParam, static_cast<uint8_t>(_value));
 			return;
 		}
 
-		const auto cc = ccs.front();
+		const auto cc = static_cast<uint8_t>(ccs.front());
 
 		if(cc == n2x::ControlChange::CCSync)
 		{
@@ -233,7 +233,7 @@ namespace n2xJucePlugin
 
 		auto ev = synthLib::SMidiEvent{synthLib::MidiEventSource::Editor, static_cast<uint8_t>(synthLib::M_CONTROLCHANGE + part), cc, static_cast<uint8_t>(_value)};
 
-		nonConstParam.setRateLimitMilliseconds(0);
+		nonConstParam.setRateLimitMilliseconds(20);
 		m_state.changeSingleParameter(part, ev);
 		sendMidiEvent(n2x::State::createPartCC(part, ev));
 	}
@@ -289,7 +289,7 @@ namespace n2xJucePlugin
 		sendSysEx(MidiPacketType::RequestDump, params);
 	}
 
-	std::vector<uint8_t> Controller::createSingleDump(uint8_t _bank, uint8_t _program, uint8_t _part) const
+	synthLib::SysexBuffer Controller::createSingleDump(uint8_t _bank, uint8_t _program, uint8_t _part) const
 	{
 		pluginLib::MidiPacket::Data data;
 
@@ -297,7 +297,7 @@ namespace n2xJucePlugin
 		data.insert(std::make_pair(pluginLib::MidiDataType::Bank, _bank));
 		data.insert(std::make_pair(pluginLib::MidiDataType::Program, _program));
 
-		std::vector<uint8_t> dst;
+		synthLib::SysexBuffer dst;
 
 		if (!createMidiDataFromPacket(dst, midiPacketName(MidiPacketType::SingleDump), data, _part))
 			return {};
@@ -305,11 +305,11 @@ namespace n2xJucePlugin
 		return dst;
 	}
 
-	std::vector<uint8_t> Controller::createMultiDump(const n2x::SysexByte _bank, const uint8_t _program)
+	synthLib::SysexBuffer Controller::createMultiDump(const n2x::SysexByte _bank, const uint8_t _program)
 	{
 		const auto multi = m_state.updateAndGetMulti();
 
-		std::vector<uint8_t> result(multi.begin(), multi.end());
+		synthLib::SysexBuffer result(multi.begin(), multi.end());
 		result = n2x::State::validateDump(result);
 
 		result[n2x::SysexIndex::IdxMsgType] = _bank;
@@ -318,7 +318,7 @@ namespace n2xJucePlugin
 		return result;
 	}
 
-	bool Controller::activatePatch(const std::vector<uint8_t>& _sysex, const uint32_t _part)
+	bool Controller::activatePatch(const synthLib::SysexBuffer& _sysex, const uint32_t _part)
 	{
 		if(_part >= getPartCount())
 			return false;
@@ -449,6 +449,11 @@ namespace n2xJucePlugin
 	bool Controller::getKnobState(uint8_t& _result, const n2x::KnobType _type) const
 	{
 		return m_state.getKnobState(_result, _type);
+	}
+
+	std::vector<uint8_t> Controller::getPartsForMidiChannel(const uint8_t _channel)
+	{
+		return m_state.getPartsForMidiChannel(_channel);
 	}
 
 	uint8_t Controller::combineSyncRingModDistortion(const uint8_t _part, const uint8_t _currentCombinedValue, bool _lockedOnly)

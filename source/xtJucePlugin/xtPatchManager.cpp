@@ -5,6 +5,11 @@
 #include "xtWaveEditor.h"
 
 #include "jucePluginEditorLib/pluginProcessor.h"
+
+#include "jucePluginLib/filetype.h"
+
+#include "juceUiLib/messageBox.h"
+
 #include "xtLib/xtMidiTypes.h"
 
 namespace xtJucePlugin
@@ -12,11 +17,12 @@ namespace xtJucePlugin
 	static constexpr std::initializer_list<jucePluginEditorLib::patchManager::GroupType> g_groupTypes =
 	{
 		jucePluginEditorLib::patchManager::GroupType::Favourites,
+		jucePluginEditorLib::patchManager::GroupType::MidiBanks,
 		jucePluginEditorLib::patchManager::GroupType::LocalStorage,
 		jucePluginEditorLib::patchManager::GroupType::DataSources,
 	};
 
-	PatchManager::PatchManager(Editor& _editor, juce::Component* _root)
+	PatchManager::PatchManager(Editor& _editor, Rml::Element* _root)
 		: jucePluginEditorLib::patchManager::PatchManager(_editor, _root, g_groupTypes)
 		, m_editor(_editor)
 		, m_controller(_editor.getXtController())
@@ -72,7 +78,7 @@ namespace xtJucePlugin
 
 		if(_sysex.size() > std::tuple_size_v<xt::State::Single>)
 		{
-			std::vector<xt::SysEx> dumps;
+			synthLib::SysexBufferList dumps;
 			xt::State::splitCombinedPatch(dumps, _sysex);
 
 			if(dumps.empty())
@@ -106,14 +112,14 @@ namespace xtJucePlugin
 		return p;
 	}
 
-	pluginLib::patchDB::Data PatchManager::applyModifications(const pluginLib::patchDB::PatchPtr& _patch) const
+	pluginLib::patchDB::Data PatchManager::applyModifications(const pluginLib::patchDB::PatchPtr& _patch, const pluginLib::FileType& _fileType, pluginLib::ExportType _exportType) const
 	{
 		auto applyModifications = [&_patch](pluginLib::patchDB::Data& _result) -> bool
 		{
-			if (xt::State::getCommand(_patch->sysex) != xt::SysexCommand::SingleDump)
+			if (xt::State::getCommand(_result) != xt::SysexCommand::SingleDump)
 				return false;
 
-			const auto dumpSize = _patch->sysex.size();
+			const auto dumpSize = _result.size();
 
 			if (dumpSize != std::tuple_size_v<xt::State::Single>)
 				return false;
@@ -136,7 +142,7 @@ namespace xtJucePlugin
 			_result[xt::SysexIndex::IdxSingleBank   ] = static_cast<uint8_t>(bank);
 			_result[xt::SysexIndex::IdxSingleProgram] = static_cast<uint8_t>(program);
 
-			xt::State::updateChecksum(_result, wLib::IdxCommand);
+			xt::State::updateChecksum(_result, xt::SysexIndex::IdxSingleChecksumStart);
 
 			return true;
 		};
@@ -153,7 +159,21 @@ namespace xtJucePlugin
 			if (xt::State::splitCombinedPatch(dumps, _patch->sysex))
 			{
 				if (applyModifications(dumps[0]))
+				{
+					if (_exportType == pluginLib::ExportType::File)
+					{
+						// hardware compatibility: multiple sysex
+						xt::SysEx r;
+
+						for (auto& dump : dumps)
+							r.insert(r.end(), dump.begin(), dump.end());
+
+						return r;
+					}
+
+					// emu compatibility: custom patch format, one sysex that includes everything
 					return xt::State::createCombinedPatch(dumps);
+				}
 			}
 		}
 
@@ -167,21 +187,20 @@ namespace xtJucePlugin
 
 	bool PatchManager::activatePatch(const pluginLib::patchDB::PatchPtr& _patch, const uint32_t _part)
 	{
-		if(!m_controller.sendSingle(applyModifications(_patch), static_cast<uint8_t>(_part)))
+		if(!m_controller.sendSingle(applyModifications(_patch, pluginLib::FileType::Empty, pluginLib::ExportType::EmuHardware), static_cast<uint8_t>(_part)))
 		{
-			juce::NativeMessageBox::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, 
+			genericUI::MessageBox::showOk(genericUI::MessageBox::Icon::Warning,
 				m_editor.getProcessor().getProperties().name + " - Unable to load patch",
 				"MW1 patches can only be loaded to the first part.\n"
 				"\n"
-				"If you want to load a MW1 patch to another part, first convert it by loading it to part 1, then save the loaded patch to a user bank."
-				, nullptr, juce::ModalCallbackFunction::create([](int){}));
+				"If you want to load a MW1 patch to another part, first convert it by loading it to part 1, then save the loaded patch to a user bank.");
 		}
 		return true;
 	}
 
-	bool PatchManager::parseFileData(pluginLib::patchDB::DataList& _results, const pluginLib::patchDB::Data& _data)
+	bool PatchManager::parseFileData(pluginLib::patchDB::DataList& _results, const pluginLib::patchDB::Data& _data, const std::string& _filename)
 	{
-		if(!jucePluginEditorLib::patchManager::PatchManager::parseFileData(_results, _data))
+		if(!jucePluginEditorLib::patchManager::PatchManager::parseFileData(_results, _data, _filename))
 			return false;
 
 		// check if there are MW1 bank dumps. A bank dump is one sysex with multiple patches. Split them into individual preset dumps
@@ -197,7 +216,7 @@ namespace xtJucePlugin
 			if(res[0] != 0xf0 || res[1] != wLib::IdWaldorf || res[2] != xt::IdMw1)
 				continue;
 
-			auto createPreset = [](pluginLib::patchDB::DataList& _res, const std::vector<uint8_t>& _source, size_t _readPos)
+			auto createPreset = [](pluginLib::patchDB::DataList& _res, const synthLib::SysexBuffer& _source, size_t _readPos)
 			{
 				pluginLib::patchDB::Data data;
 
@@ -256,6 +275,8 @@ namespace xtJucePlugin
 			}
 		}
 
+		createCombinedDumps(_results);
+
 		return true;
 	}
 
@@ -275,5 +296,107 @@ namespace xtJucePlugin
 			}
 		}
 		return _data;
+	}
+
+	void PatchManager::createCombinedDumps(std::vector<pluginLib::patchDB::Data>& _messages)
+	{
+		// grab single dumps, waves and control tables and combine them into our custom single format that includes waves & tables if applicable
+
+		m_waves.clear();
+		m_tables.clear();
+		m_singles.clear();
+
+		// grab waves & tables first, if there are none we can skip everything
+		for (auto& msg : _messages)
+		{
+			auto cmd = xt::State::getCommand(msg);
+			switch (cmd)
+			{
+			case xt::SysexCommand::WaveDump:
+				{
+					const auto id = xt::State::getWaveId(msg);
+					if (m_waves.find(id) == m_waves.end())
+					{
+						m_waves.emplace(id, std::move(msg));
+						msg.clear();
+					}
+				}
+				break;
+			case xt::SysexCommand::WaveCtlDump:
+				{
+					const auto id = xt::State::getTableId(msg);
+					if (m_tables.find(id) == m_tables.end())
+					{
+						m_tables.emplace(id, std::move(msg));
+						msg.clear();
+					}
+				}
+				break;
+			default:;
+			}
+		}
+
+		if (m_tables.empty())
+			return;
+
+		for (auto& msg : _messages)
+		{
+			auto cmd = xt::State::getCommand(msg);
+
+			if (cmd != xt::SysexCommand::SingleDump)
+				continue;
+
+			auto table = xt::State::getWavetableFromSingleDump(msg);
+
+			if (xt::wave::isReadOnly(table))
+				continue;
+
+			std::vector<xt::SysEx> results;
+			getWaveDataForSingle(results, msg);
+			if (results.empty())
+				continue;
+
+			results.insert(results.begin(), msg);
+			auto newSingle = xt::State::createCombinedPatch(results);
+			msg.assign(newSingle.begin(), newSingle.end());
+		}
+	}
+
+	void PatchManager::getWaveDataForSingle(std::vector<xt::SysEx>& _results, const xt::SysEx& _single) const
+	{
+		const auto tableId = xt::State::getWavetableFromSingleDump(_single);
+
+		if(xt::wave::isReadOnly(tableId))
+			return;
+
+		auto itTable = m_tables.find(tableId);
+		if (itTable == m_tables.end())
+			return;
+
+		xt::TableData table;
+
+		if (!xt::State::parseTableData(table, itTable->second))
+			return;
+
+		const auto waves = xt::State::getWavesForTable(table);
+
+		for (const auto waveId : waves)
+		{
+			if(!xt::wave::isValidWaveIndex(waveId.rawId()))
+				continue;
+
+			if(xt::wave::isReadOnly(waveId))
+				continue;
+
+			const auto itWave = m_waves.find(waveId);
+			if (itWave == m_waves.end())
+				continue;
+
+			const auto wave = itWave->second;
+
+			_results.emplace_back(wave);
+		}
+
+		_results.emplace_back(itTable->second);
 	}
 }

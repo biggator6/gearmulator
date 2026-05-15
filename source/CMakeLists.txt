@@ -5,10 +5,13 @@ option(${CMAKE_PROJECT_NAME}_SYNTH_OSTIRUS "Build OsTIrus" on)
 option(${CMAKE_PROJECT_NAME}_SYNTH_VAVRA "Build Vavra" on)
 option(${CMAKE_PROJECT_NAME}_SYNTH_XENIA "Build Xenia" on)
 option(${CMAKE_PROJECT_NAME}_SYNTH_NODALRED2X "Build NodalRed2x" on)
+option(${CMAKE_PROJECT_NAME}_SYNTH_JE8086 "Build JE-8086" on)
 
 # ----------------- Add our cmake scripts to IDE
 
 add_custom_target(cmakeScripts SOURCES 
+	changelog.cmake
+	exporttarget.cmake
 	findvst2.cmake 
 	juce.cmake 
 	macsetup.cmake 
@@ -36,14 +39,22 @@ add_subdirectory(baseLib)
 add_subdirectory(synthLib)
 add_subdirectory(libresample)
 
+add_subdirectory(3rdparty)
+
 include(macsetup.cmake)
 include(skins.cmake)
+include(exporttarget.cmake)
+include(changelog.cmake)
 
 # ----------------- network bridge
 
 add_subdirectory(ptypes EXCLUDE_FROM_ALL)
 add_subdirectory(networkLib EXCLUDE_FROM_ALL)
 add_subdirectory(bridge)
+
+# ----------------- MCP server
+
+# MCP server is always built, but can be enabled/disabled at runtime via plugin settings
 
 # ----------------- Try to install VST2 SDK
 
@@ -59,10 +70,14 @@ if(${CMAKE_PROJECT_NAME}_BUILD_JUCEPLUGIN)
 		add_subdirectory(clap-juce-extensions)
 	endif()
 	add_subdirectory(jucePluginLib EXCLUDE_FROM_ALL)
+	add_subdirectory(mcpServerLib EXCLUDE_FROM_ALL)
+	add_subdirectory(juceRmlUi)
+	add_subdirectory(juceRmlPlugin)
 	add_subdirectory(juceUiLib EXCLUDE_FROM_ALL)
 	add_subdirectory(jucePluginEditorLib EXCLUDE_FROM_ALL)
 	add_subdirectory(jucePluginData EXCLUDE_FROM_ALL)
-	
+	add_subdirectory(pluginTester)
+	add_subdirectory(midiLearnTest)
 	include(juce.cmake)
 endif()
 
@@ -131,3 +146,7 @@ endif()
 # ----------------- all nords
 
 add_subdirectory(nord)
+
+# ----------------- all ronaldos
+
+add_subdirectory(ronaldo)

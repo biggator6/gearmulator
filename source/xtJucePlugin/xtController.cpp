@@ -6,7 +6,7 @@
 
 #include "xtLib/xtState.h"
 
-#include "dsp56kEmu/logging.h"
+#include "dsp56kBase/logging.h"
 
 #include "xtFrontPanel.h"
 #include "xtWaveEditor.h"
@@ -80,18 +80,18 @@ namespace xtJucePlugin
 		for(uint8_t i=0; i<m_singleEditBuffers.size(); ++i)
 		{
 			auto* p = getParameter(idx, i);
-			p->setRateLimitMilliseconds(250);
+			p->setRateLimitMilliseconds(100);
 		}
 	}
 
 	Controller::~Controller() = default;
 
-	bool Controller::sendSingle(const std::vector<uint8_t>& _sysex)
+	bool Controller::sendSingle(const synthLib::SysexBuffer& _sysex)
 	{
 		return sendSingle(_sysex, getCurrentPart());
 	}
 
-	bool Controller::sendSingle(const std::vector<uint8_t>& _sysex, const uint8_t _part)
+	bool Controller::sendSingle(const synthLib::SysexBuffer& _sysex, const uint8_t _part)
 	{
 		if(_sysex.size() == xt::Mw1::g_singleDumpLength)
 		{
@@ -110,7 +110,7 @@ namespace xtJucePlugin
 		if(_sysex.size() > std::tuple_size_v<xt::State::Single>)
 		{
 			// split a combined single into single, table, waves and send all of them
-			std::vector<xt::SysEx> splitResults;
+			synthLib::SysexBufferList splitResults;
 			xt::State::splitCombinedPatch(splitResults, _sysex);
 
 			if(!splitResults.empty())
@@ -160,6 +160,26 @@ namespace xtJucePlugin
 	uint8_t Controller::getPartCount() const
 	{
 		return 8;
+	}
+
+	std::vector<uint8_t> Controller::getPartsForMidiChannel(const uint8_t _channel)
+	{
+		if (!isMultiMode())
+			return {0};
+
+		std::vector<uint8_t> parts;
+
+		for (uint8_t p=0; p<getPartCount(); ++p)
+		{
+			char paramName[16];
+			(void)snprintf(paramName, std::size(paramName), "MI%dMidiChannel", static_cast<int>(p));
+			auto* param = getParameter(paramName, 0);
+			assert(param && "parameter not found");
+			const auto v = param->getUnnormalizedValue();
+			if (v < 2 || v - 2 == _channel)	// omni, global, 0, 1, ....
+				parts.push_back(p);
+		}
+		return parts;
 	}
 
 	std::string Controller::getSingleName(const pluginLib::MidiPacket::ParamValues& _values) const
@@ -307,7 +327,7 @@ namespace xtJucePlugin
 		applyPatchParameters(_params, 0);
 	}
 
-	bool Controller::parseSysexMessage(const pluginLib::SysEx& _msg, synthLib::MidiEventSource)
+	bool Controller::parseSysexMessage(const pluginLib::SysEx& _msg, synthLib::MidiEventSource _source)
 	{
 	    if(_msg.size() >= 5)
 	    {
@@ -367,7 +387,7 @@ namespace xtJucePlugin
 		    auto& params = findSynthParam(part, page, index);
 
 		    for (auto& param : params)
-			    param->setValueFromSynth(value, pluginLib::Parameter::Origin::Midi);
+			    param->setValueFromSynth(value, midiEventSourceToParameterOrigin(_source));
 
 		    LOG("Single parameter " << static_cast<int>(index) << ", page " << static_cast<int>(page) << " for part " << static_cast<int>(part) << " changed to value " << static_cast<int>(value));
 	    }
@@ -400,7 +420,8 @@ namespace xtJucePlugin
 
 				if (xt::State::parseTableData(table, _msg))
 				{
-					for (const auto& wave : table)
+					auto waves = xt::State::getWavesForTable(table);
+					for (const auto& wave : waves)
 					{
 						if (!xt::wave::isReadOnly(wave))
 							requestWave(wave.rawId());
@@ -415,12 +436,6 @@ namespace xtJucePlugin
 			return false;
 	    }
 		return true;
-	}
-
-	bool Controller::parseControllerMessage(const synthLib::SMidiEvent&)
-	{
-		// TODO
-		return false;
 	}
 
 	bool Controller::parseMidiPacket(MidiPacketType _type, pluginLib::MidiPacket::Data& _data, pluginLib::MidiPacket::AnyPartParamValues& _params, const pluginLib::SysEx& _sysex) const
@@ -469,7 +484,7 @@ namespace xtJucePlugin
 		selectPreset(-1);
 	}
 
-	std::vector<uint8_t> Controller::createSingleDump(const xt::LocationH _buffer, const uint8_t _location, const uint8_t _part) const
+	synthLib::SysexBuffer Controller::createSingleDump(const xt::LocationH _buffer, const uint8_t _location, const uint8_t _part) const
 	{
 		pluginLib::MidiPacket::Data data;
 
@@ -477,7 +492,7 @@ namespace xtJucePlugin
 		data.insert(std::make_pair(pluginLib::MidiDataType::Bank, static_cast<uint8_t>(_buffer)));
 		data.insert(std::make_pair(pluginLib::MidiDataType::Program, _location));
 
-		std::vector<uint8_t> dst;
+		synthLib::SysexBuffer dst;
 
 		if (!createMidiDataFromPacket(dst, midiPacketName(SingleDump), data, _part))
 			return {};
@@ -485,7 +500,7 @@ namespace xtJucePlugin
 		return dst;
 	}
 
-	std::vector<uint8_t> Controller::createSingleDump(xt::LocationH _buffer, const uint8_t _location, const pluginLib::MidiPacket::AnyPartParamValues& _values) const
+	synthLib::SysexBuffer Controller::createSingleDump(xt::LocationH _buffer, const uint8_t _location, const pluginLib::MidiPacket::AnyPartParamValues& _values) const
 	{
 		pluginLib::MidiPacket::Data data;
 
@@ -493,7 +508,7 @@ namespace xtJucePlugin
 		data.insert(std::make_pair(pluginLib::MidiDataType::Bank, static_cast<uint8_t>(_buffer)));
 		data.insert(std::make_pair(pluginLib::MidiDataType::Program, _location));
 
-		std::vector<uint8_t> dst;
+		synthLib::SysexBuffer dst;
 
 		if (!createMidiDataFromPacket(dst, midiPacketName(SingleDump), data, _values))
 			return {};
@@ -501,7 +516,7 @@ namespace xtJucePlugin
 		return dst;
 	}
 
-	bool Controller::parseSingle(pluginLib::MidiPacket::Data& _data, pluginLib::MidiPacket::AnyPartParamValues& _paramValues, const std::vector<uint8_t>& _sysex) const
+	bool Controller::parseSingle(pluginLib::MidiPacket::Data& _data, pluginLib::MidiPacket::AnyPartParamValues& _paramValues, const synthLib::SysexBuffer& _sysex) const
 	{
 		return parseMidiPacket(SingleDump, _data, _paramValues, _sysex);
 	}
@@ -564,7 +579,7 @@ namespace xtJucePlugin
 	*/  }
 	}
 
-	void Controller::sendParameterChange(const pluginLib::Parameter& _parameter, const pluginLib::ParamValue _value)
+	void Controller::sendParameterChange(const pluginLib::Parameter& _parameter, const pluginLib::ParamValue _value, pluginLib::Parameter::Origin _origin)
 	{
 		const auto &desc = _parameter.getDescription();
 
@@ -651,7 +666,7 @@ namespace xtJucePlugin
 
 	bool Controller::sendModeDump() const
 	{
-		std::vector<uint8_t> sysex;
+		synthLib::SysexBuffer sysex;
 		std::map<pluginLib::MidiDataType, uint8_t> data;
 		data.insert({pluginLib::MidiDataType::DeviceId, m_deviceId});
 		if(!createMidiDataFromPacket(sysex, midiPacketName(ModeDump), data, 0))

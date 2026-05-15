@@ -8,8 +8,8 @@
 
 #include "baseLib/semaphore.h"
 
-#include "hardwareLib/dspBootCode.h"
-#include "hardwareLib/haltDSP.h"
+#include "dsp56kEmu/dspBootCode.h"
+#include "dsp56kEmu/haltDSP.h"
 
 namespace mc68k
 {
@@ -67,11 +67,11 @@ namespace n2x
 
 		std::unique_ptr<dsp56k::DSPThread> m_thread;
 
-		baseLib::Semaphore m_triggerInterruptDone;
+		dsp56k::SpscSemaphore m_triggerInterruptDone;
 		uint32_t m_irqInterruptDone = 0;
 
-		hwLib::HaltDSP m_haltDSP;
+		dsp56k::HaltDSP m_haltDSP;
 
-		hwLib::DspBoot m_boot;
+		dsp56k::DspBoot m_boot;
 	};
 }

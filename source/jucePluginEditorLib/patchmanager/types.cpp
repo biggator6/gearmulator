@@ -4,13 +4,31 @@
 
 namespace jucePluginEditorLib::patchManager
 {
+	constexpr const char* const g_groupNames[] =
+	{
+		"Invalid",
+		"Data Sources",
+		"User",
+		"Factory",
+		"MIDI Banks",
+		"Categories",
+		"Tags",
+		"Favourites",
+		"CustomA",
+		"CustomB",
+		"CustomC"
+	};
+
+	static_assert(std::size(g_groupNames) == static_cast<uint32_t>(GroupType::Count));
+
 	pluginLib::patchDB::TagType toTagType(const GroupType _groupType)
 	{
 		switch (_groupType)
 		{
 		case GroupType::DataSources:
 		case GroupType::LocalStorage:
-		case GroupType::Factory:		return pluginLib::patchDB::TagType::Invalid;
+		case GroupType::Factory:
+		case GroupType::MidiBanks:		return pluginLib::patchDB::TagType::Invalid;
 		case GroupType::Categories:		return pluginLib::patchDB::TagType::Category;
 		case GroupType::Tags:			return pluginLib::patchDB::TagType::Tag;
 		case GroupType::Favourites:		return pluginLib::patchDB::TagType::Favourites;
@@ -58,5 +76,13 @@ namespace jucePluginEditorLib::patchManager
 		case GroupType::Factory:		return pluginLib::patchDB::SourceType::Rom;
 		default:						return pluginLib::patchDB::SourceType::Invalid;
 		}
+	}
+
+	std::string toString(const GroupType _groupType)
+	{
+		auto index = static_cast<size_t>(_groupType);
+		if (index >= std::size(g_groupNames))
+			return {};
+		return g_groupNames[index];
 	}
 }

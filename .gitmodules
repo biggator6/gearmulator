@@ -12,4 +12,10 @@
 	url = https://github.com/dsp56300/mc68k.git
 [submodule "source/clap-juce-extensions"]
 	path = source/clap-juce-extensions
-	url = https://github.com/free-audio/clap-juce-extensions
+	url = https://github.com/dsp56300/clap-juce-extensions.git
+[submodule "source/3rdparty/RmlUi"]
+	path = source/3rdparty/RmlUi
+	url = https://github.com/dsp56300/RmlUi.git
+[submodule "source/3rdparty/freetype"]
+	path = source/3rdparty/freetype
+	url = https://github.com/freetype/freetype.git

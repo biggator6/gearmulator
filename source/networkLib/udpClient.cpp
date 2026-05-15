@@ -10,7 +10,7 @@
 #include <iphlpapi.h>
 #include <ws2tcpip.h>
 #pragma comment(lib, "Iphlpapi.lib")
-#else
+#elif !defined(ANDROID)
 #include <ifaddrs.h>
 #endif
 
@@ -53,6 +53,9 @@ namespace networkLib
 
 			_addresses.push_back(broadcastAddr);
 		}
+
+#elif defined(ANDROID)
+		_addresses.push_back(0xff'ff'ff'ff);
 #else
 		ifaddrs* ifap = nullptr;
 		if (getifaddrs(&ifap) == 0 && ifap)
@@ -110,10 +113,17 @@ namespace networkLib
 
 					const auto host = std::string(ptypes::iptostring(addr));
 
-					if(validateResponse(host, buffer))
+					try
 					{
-						exit(true);
-						break;
+						if(validateResponse(host, buffer))
+						{
+							exit(true);
+							break;
+						}
+					}
+					catch (std::range_error& e)
+					{
+						LOGNET(LogLevel::Warning, e.what());
 					}
 				}
 

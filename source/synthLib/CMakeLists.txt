@@ -15,18 +15,22 @@ set(SOURCES
 	device.cpp device.h
 	deviceException.cpp deviceException.h
 	deviceTypes.h
-	dspMemoryPatch.cpp dspMemoryPatch.h
 	lv2PresetExport.cpp lv2PresetExport.h
 	midiBufferParser.cpp midiBufferParser.h
 	midiClock.cpp midiClock.h
+	midiRateLimiter.cpp midiRateLimiter.h
+	midiRoutingMatrix.cpp midiRoutingMatrix.h
 	midiToSysex.cpp midiToSysex.h
 	midiTranslator.cpp midiTranslator.h
 	midiTypes.h
 	os.cpp os.h
 	plugin.cpp plugin.h
+	mameResamplers.cpp mameResamplers.h
 	resampler.cpp resampler.h
 	resamplerInOut.cpp resamplerInOut.h
 	romLoader.cpp romLoader.h
+	sounddiverLibLoader.cpp sounddiverLibLoader.h
+	sysexRemoteControl.cpp sysexRemoteControl.h
 	sysexToMidi.cpp sysexToMidi.h
 	vstpreset.cpp vstpreset.h
 	wavReader.cpp wavReader.h
@@ -37,7 +41,7 @@ set(SOURCES
 target_sources(synthLib PRIVATE ${SOURCES})
 source_group("source" FILES ${SOURCES})
 
-target_link_libraries(synthLib PUBLIC resample dsp56kEmu baseLib)
+target_link_libraries(synthLib PUBLIC resample dsp56kBase baseLib)
 
 if(NOT MSVC)
 	target_link_libraries(synthLib PUBLIC dl)

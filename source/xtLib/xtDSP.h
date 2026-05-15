@@ -4,7 +4,7 @@
 #include "dsp56kEmu/dspthread.h"
 #include "dsp56kEmu/peripherals.h"
 
-#include "hardwareLib/dspBootCode.h"
+#include "dsp56kEmu/dspBootCode.h"
 
 #include "wLib/wDsp.h"
 
@@ -24,7 +24,7 @@ namespace xt
 		static constexpr dsp56k::TWord g_xyMemSize		= 0x800000;	// due to weird AAR mapping we just allocate enough so that everything fits into it
 		static constexpr dsp56k::TWord g_pMemSize		= 0x020000;	// DSP code does not use all of it, gives space for our boot code
 
-		DSP(Hardware& _hardware, mc68k::Hdi08& _hdiUC, uint32_t _index);
+		DSP(Hardware& _hardware, mc68k::Hdi08& _hdiUC, uint32_t _index, bool _voiceExpansion = false);
 		void exec();
 
 		dsp56k::HDI08& hdi08()
@@ -74,6 +74,6 @@ namespace xt
 		uint32_t m_hdiHF01 = 0;	// uc => DSP
 
 		std::unique_ptr<dsp56k::DSPThread> m_thread;
-		hwLib::DspBoot m_boot;
+		dsp56k::DspBoot m_boot;
 	};
 }

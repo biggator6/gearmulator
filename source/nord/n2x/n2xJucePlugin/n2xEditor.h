@@ -1,6 +1,7 @@
 #pragma once
 
 #include "jucePluginEditorLib/pluginEditor.h"
+
 #include "jucePluginLib/patchdb/patch.h"
 
 namespace jucePluginEditorLib
@@ -10,13 +11,14 @@ namespace jucePluginEditorLib
 	class Processor;
 }
 
-namespace pluginLib
+namespace juceRmlUi
 {
-	class ParameterBinding;
+	class ElemButton;
 }
 
 namespace n2xJucePlugin
 {
+	class Part;
 	class OutputMode;
 	class Lfo;
 	class FocusedParameter;
@@ -33,7 +35,7 @@ namespace n2xJucePlugin
 	class Editor final : public jucePluginEditorLib::Editor
 	{
 	public:
-		Editor(jucePluginEditorLib::Processor& _processor, pluginLib::ParameterBinding& _binding, const jucePluginEditorLib::Skin& _skin);
+		Editor(jucePluginEditorLib::Processor& _processor, const jucePluginEditorLib::Skin& _skin);
 		~Editor() override;
 
 		Editor(Editor&&) = delete;
@@ -41,17 +43,21 @@ namespace n2xJucePlugin
 		Editor& operator = (Editor&&) = delete;
 		Editor& operator = (const Editor&) = delete;
 
+		void create() override;
+
+		jucePluginEditorLib::patchManager::PatchManager* createPatchManager(Rml::Element* _parent) override;
+
+		void initSkinConverterOptions(rmlPlugin::skinConverter::SkinConverterOptions&) override;
+		
 		std::pair<std::string, std::string> getDemoRestrictionText() const override;
 
 		Controller& getN2xController() const { return m_controller; }
 
-		genericUI::Button<juce::DrawableButton>* createJuceComponent(genericUI::Button<juce::DrawableButton>*, genericUI::UiObject& _object, const std::string& _name, juce::DrawableButton::ButtonStyle) override;
+//		genericUI::Button<juce::DrawableButton>* createJuceComponent(genericUI::Button<juce::DrawableButton>*, genericUI::UiObject& _object, const std::string& _name, juce::DrawableButton::ButtonStyle) override;
 
 		std::string getCurrentPatchName() const;
 
 		void onPatchActivated(const pluginLib::patchDB::PatchPtr& _patch, uint32_t _part);
-
-		pluginLib::ParameterBinding& getParameterBinding() const { return m_parameterBinding; }
 
 		Lcd& getLCD() const
 		{
@@ -71,20 +77,21 @@ namespace n2xJucePlugin
 			return *m_vmMap;
 		}
 
-		genericUI::Slider* createJuceComponent(genericUI::Slider*, genericUI::UiObject& _object) override;
+//		genericUI::Slider* createJuceComponent(genericUI::Slider*, genericUI::UiObject& _object) override;
 
-		void modifierKeysChanged(const juce::ModifierKeys& modifiers) override;
+//		void modifierKeysChanged(const juce::ModifierKeys& modifiers) override;
+
+		void createExportFileTypeMenu(juceRmlUi::Menu& _menu, const std::function<void(pluginLib::FileType)>& _func) const override;
 
 	private:
-		void mouseEnter(const juce::MouseEvent& _ev) override;
-		void onBtSave() const;
-		void onBtPrev() const;
-		void onBtNext() const;
+		void onBtSave(Rml::Event&) const;
+		void onBtPrev(Rml::Event&) const;
+		void onBtNext(Rml::Event&) const;
 		void setCurrentPatchName(uint8_t _part, const std::string& _name);
 		void onSelectedPatchChanged(uint8_t _part, const pluginLib::patchDB::PatchKey& _patchKey);
+		void setProgramMode(bool _programMode);
 
 		Controller& m_controller;
-		pluginLib::ParameterBinding& m_parameterBinding;
 
 		std::unique_ptr<Arp> m_arp;
 		std::unique_ptr<FocusedParameter> m_focusedParameter;
@@ -102,5 +109,10 @@ namespace n2xJucePlugin
 		std::array<std::string, 4> m_activePatchNames;
 
 		baseLib::EventListener<uint32_t, pluginLib::patchDB::PatchKey> m_onSelectedPatchChanged;
+
+		bool m_programMode = true;
+		juceRmlUi::ElemButton* m_btProgram = nullptr;
+		juceRmlUi::ElemButton* m_btPerformance = nullptr;
+		baseLib::EventListener<> m_onProgramChangedForMute;
 	};
 }

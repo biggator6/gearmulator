@@ -2,6 +2,9 @@
 
 #include "jucePluginLib/processor.h"
 
+#include <memory>
+namespace mcpServer { class McpPluginServer; }
+
 namespace jucePluginEditorLib
 {
 	class PluginEditorState;
@@ -22,13 +25,20 @@ namespace jucePluginEditorLib
 
 		virtual PluginEditorState* createEditorState() = 0;
 		void destroyEditorState();
+		PluginEditorState* getEditorState() const { return m_editorState.get(); }
 
 		void saveChunkData(baseLib::BinaryStream& s) override;
 		bool loadCustomData(const std::vector<uint8_t>& _sourceBuffer) override;
 		void loadChunkData(baseLib::ChunkReader& _cr) override;
 
+		mcpServer::McpPluginServer* getMcpServer() const { return m_mcpServer.get(); }
+		void setMcpServerEnabled(bool _enabled);
+
 	private:
 		juce::File initConfigFile(const juce::PropertiesFile::Options& _o) const;
+		void savePluginLoadPath();
+		void startMcpServer();
+		void stopMcpServer();
 
 		std::unique_ptr<PluginEditorState> m_editorState;
 
@@ -36,5 +46,7 @@ namespace jucePluginEditorLib
 		juce::PropertiesFile m_config;
 
 		std::vector<uint8_t> m_editorStateData;
+
+		std::unique_ptr<mcpServer::McpPluginServer> m_mcpServer;
 	};
 }

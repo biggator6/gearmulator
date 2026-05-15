@@ -35,12 +35,19 @@ namespace hwLib
 			for (const uint8_t byte : _bytes)
 				write(byte);
 		}
-		void write(const synthLib::SMidiEvent& _e);
+		virtual void write(const synthLib::SMidiEvent& _e);
 
+		template<typename Alloc>
+		void write(const std::vector<uint8_t, Alloc>& _bytes)
+		{
+			for (const uint8_t byte : _bytes)
+				write(byte);
+		}
 
-		void read(std::vector<uint8_t>& _result);
+		virtual void read(std::vector<uint8_t>& _result);
 
 		void setSysexDelay(const float _seconds, const uint32_t _size);
+		void setByteDelay(float _seconds);
 
 	private:
 		mc68k::Qsm& m_qsm;
@@ -56,5 +63,9 @@ namespace hwLib
 		std::mutex m_mutex;
 		float m_sysexDelaySeconds;
 		uint32_t m_sysexDelaySize;
+
+		std::deque<uint8_t> m_pendingBytes;
+		uint32_t m_remainingByteDelay = 0;
+		float m_byteDelaySeconds = 0.0f;
 	};
 }

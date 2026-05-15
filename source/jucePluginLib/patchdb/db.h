@@ -3,7 +3,6 @@
 #include <functional>
 #include <map>
 #include <list>
-#include <thread>
 #include <shared_mutex>
 
 #include "patch.h"
@@ -13,6 +12,12 @@
 #include "jobqueue.h"
 
 #include "juce_core/juce_core.h"
+
+namespace pluginLib
+{
+	enum class ExportType : uint8_t;
+	class FileType;
+}
 
 namespace pluginLib::patchDB
 {
@@ -44,6 +49,10 @@ namespace pluginLib::patchDB
 			for (const auto& it : m_dataSources)
 				_dataSources.push_back(it.second);
 		}
+
+		bool setDataSourceMidiBankNumber(const DataSourceNodePtr& _ds, uint32_t _midiBankNumber);
+		bool clearDataSourceMidiBankNumber(const DataSourceNodePtr& _ds);
+		DataSourceNodePtr getDataSourceByMidiBankNumber(uint32_t _midiBankNumber);
 
 		bool setTagColor(TagType _type, const Tag& _tag, Color _color);
 		Color getTagColor(TagType _type, const Tag& _tag) const;
@@ -96,8 +105,8 @@ namespace pluginLib::patchDB
 		virtual bool loadLocalStorage(DataList& _results, const DataSource& _ds);
 		virtual bool loadFolder(const DataSourceNodePtr& _folder);
 		virtual PatchPtr initializePatch(Data&& _sysex, const std::string& _defaultPatchName) = 0;
-		virtual Data applyModifications(const PatchPtr& _patch) const = 0;
-		virtual bool parseFileData(DataList& _results, const Data& _data);
+		virtual Data applyModifications(const PatchPtr& _patch, const FileType& _fileType, ExportType _exportType) const = 0;
+		virtual bool parseFileData(DataList& _results, const Data& _data, const std::string& _filename);
 		virtual bool equals(const PatchPtr& _a, const PatchPtr& _b) const
 		{
 			return _a == _b || _a->hash == _b->hash;
@@ -152,6 +161,9 @@ namespace pluginLib::patchDB
 
 		void pushError(std::string _string);
 
+		juce::File getTempFile(const juce::File& _target) const;
+		static bool moveFileWithRetry(const juce::File& _src, const juce::File& _dst);
+
 		bool loadCache();
 		void saveCache();
 		juce::File getCacheFile() const;
@@ -186,5 +198,8 @@ namespace pluginLib::patchDB
 		// state
 		bool m_loading = true;
 		bool m_cacheDirty = false;
+
+		// pending MIDI bank assignments from JSON, applied when datasources become available
+		std::map<DataSource, uint32_t> m_pendingMidiBankAssignments;
 	};
 }

@@ -9,7 +9,10 @@ namespace mqLib
 
 namespace xt
 {
-	Device::Device(const synthLib::DeviceCreateParams& _params) : wLib::Device(_params), m_xt(_params.romData, _params.romName), m_wavePreview(m_xt), m_state(m_xt, m_wavePreview), m_sysexRemote(m_xt)
+	Device::Device(const synthLib::DeviceCreateParams& _params)
+		: wLib::Device(_params)
+		, m_xt(_params.romData, _params.romName, (_params.customData & 1) != 0)
+		, m_wavePreview(m_xt), m_state(m_xt, m_wavePreview), m_sysexRemote(m_xt)
 	{
 		while(!m_xt.isBootCompleted())
 			m_xt.process(8);
@@ -65,7 +68,7 @@ namespace xt
 
 			for (auto& response : responses)
 			{
-				auto& r = _midiOut.emplace_back();
+				auto& r = _midiOut.emplace_back(synthLib::MidiEventSource::Device);
 				std::swap(response, r.sysex);
 			}
 		}
@@ -106,7 +109,7 @@ namespace xt
 
 		for (auto& response : responses)
 		{
-			auto& r = _response.emplace_back();
+			auto& r = _response.emplace_back(synthLib::MidiEventSource::Device);
 			std::swap(response, r.sysex);
 		}
 

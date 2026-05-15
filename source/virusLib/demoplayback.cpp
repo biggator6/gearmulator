@@ -8,7 +8,7 @@
 #include "synthLib/midiToSysex.h"
 #include "synthLib/midiTypes.h"
 
-#include "dsp56kEmu/logging.h"
+#include "dsp56kBase/logging.h"
 
 #include <cstring> // memcpy
 
@@ -27,7 +27,7 @@ namespace virusLib
 		if(baseLib::filesystem::hasExtension(_filename, ".bin"))
 		{
 			std::vector<uint8_t> data;
-			auto* hFile = fopen(_filename.c_str(), "rb");
+			auto* hFile = baseLib::filesystem::openFile(_filename, "rb");
 			if(!hFile)
 			{
 				LOG("Failed to open demo file " << _filename);
@@ -219,7 +219,7 @@ namespace virusLib
 						break;
 					}
 				}
-				FILE* hFile = fopen(filename.c_str(), "wb");
+				FILE* hFile = baseLib::filesystem::openFile(filename, "wb");
 				fwrite(&s.front(), 1, s.size(), hFile);
 				fclose(hFile);
 			}
@@ -305,7 +305,8 @@ namespace virusLib
 		case EventType::MidiSysex:
 			{
 				std::vector<synthLib::SMidiEvent> responses;
-				m_mc.sendSysex(_event.data, responses, synthLib::MidiEventSource::Internal);
+				synthLib::SysexBuffer sysexData(_event.data.begin(), _event.data.end());
+				m_mc.sendSysex(sysexData, responses, synthLib::MidiEventSource::Internal);
 			}
 			break;
 		case EventType::Midi:

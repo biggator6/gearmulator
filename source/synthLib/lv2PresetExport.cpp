@@ -102,7 +102,7 @@ namespace synthLib
 			return _string;
 		}
 
-		int getBitRange (const std::vector<uint8_t>& _data, size_t bitRangeStart, size_t numBits)
+		int getBitRange (const SysexBuffer& _data, size_t bitRangeStart, size_t numBits)
 		{
 		    int res = 0;
 
@@ -128,7 +128,7 @@ namespace synthLib
 
 		constexpr char base64EncodingTable[] = ".ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+";
 
-		std::string dataToJuceEncodedString(const std::vector<uint8_t>& _data)
+		std::string dataToJuceEncodedString(const SysexBuffer& _data)
 		{
 		    const auto numChars = ((_data.size() << 3) + 5) / 6;
 
@@ -222,7 +222,7 @@ namespace synthLib
 	{
 		const auto manifestFile = getManifestFilename(_path);
 
-		FILE* const hFile = fopen(manifestFile.c_str(), "rb");
+		FILE* const hFile = baseLib::filesystem::openFile(manifestFile, "rb");
 		if(!hFile)
 			return false;
 		(void)fclose(hFile);

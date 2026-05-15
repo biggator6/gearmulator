@@ -25,7 +25,7 @@ namespace mqLib
 	class MqMc final : public mc68k::Mc68k
 	{
 	public:
-		explicit MqMc(const ROM& _rom);
+		explicit MqMc(const ROM& _rom, bool _voiceExpansion = false);
 		~MqMc() override;
 
 		uint32_t exec() override;
@@ -48,13 +48,13 @@ namespace mqLib
 		void dumpROM(const char* _filename) const;
 		void dumpAssembly(uint32_t _first, uint32_t _count);
 
-	private:
 		uint16_t readImm16(uint32_t _addr) override;
 		uint16_t read16(uint32_t addr) override;
 		uint8_t read8(uint32_t addr) override;
 		void write16(uint32_t addr, uint16_t val) override;
 		void write8(uint32_t addr, uint8_t val) override;
 
+	private:
 		void onReset() override;
 		uint32_t onIllegalInstruction(uint32_t opcode) override;
 
@@ -66,8 +66,9 @@ namespace mqLib
 		void processLCDandLEDs();
 
 		const ROM& m_rom;
+		const bool m_useVoiceExpansion;
 		std::vector<uint8_t> m_romRuntimeData;
-		std::unique_ptr<hwLib::Am29f> m_flash;
+		std::unique_ptr<hwLib::Am29f> m_flash;	// Its a MX 29F400TTC-70 which is a 4MBit (512kx8) AM29 compatible flash with top boot block
 		LCD m_lcd;
 		Buttons m_buttons;
 		Leds m_leds;

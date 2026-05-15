@@ -1,40 +1,65 @@
 #include "weGraph.h"
 
 #include "xtWaveEditor.h"
-#include "dsp56kEmu/fastmath.h"
+#include "xtWaveEditorStyle.h"
+#include "baseLib/filesystem.h"
+
+#include "dsp56kBase/fastmath.h"
+
+#include "juceRmlUi/rmlElemCanvas.h"
+#include "juceRmlUi/rmlHelper.h"
 
 namespace xtJucePlugin
 {
-	Graph::Graph(WaveEditor& _editor) : m_editor(_editor), m_data(_editor.getGraphData())
+	namespace
 	{
-		m_onDataChanged.set(m_data.onChanged, [this]()
+		WaveEditorStyle g_style;
+	}
+
+	Graph::Graph(WaveEditor& _editor, Rml::Element* _parent) : m_editor(_editor), m_parent(_parent), m_data(_editor.getGraphData())
+	{
+		_parent->SetClass("x-we-graph", true);
+
+		m_onDataChanged.set(m_data.onChanged, [this]
 		{
 			onSourceChanged();
 		});
+
+		m_canvas = juceRmlUi::ElemCanvas::create(_parent);
+
+		m_canvas->setRepaintGraphicsCallback([this](const juce::Image& _image, juce::Graphics& _graphics)
+		{
+			m_width = _image.getWidth();
+			m_height = _image.getHeight();
+			paint(_graphics);
+		});
+
+		_parent->AddEventListener(Rml::EventId::Mousedown, this);
+		_parent->AddEventListener(Rml::EventId::Mouseover, this);
+		_parent->AddEventListener(Rml::EventId::Mouseout, this);
+		_parent->AddEventListener(Rml::EventId::Mousemove, this);
+		_parent->AddEventListener(Rml::EventId::Drag, this);
+
+		_parent->SetProperty(Rml::PropertyId::Drag, Rml::Style::Drag::Drag);
+	}
+	Graph::~Graph()
+	{
+		m_parent->RemoveEventListener(Rml::EventId::Mousedown, this);
+		m_parent->RemoveEventListener(Rml::EventId::Mouseover, this);
+		m_parent->RemoveEventListener(Rml::EventId::Mouseout, this);
+		m_parent->RemoveEventListener(Rml::EventId::Mousemove, this);
+		m_parent->RemoveEventListener(Rml::EventId::Drag, this);
 	}
 
 	void Graph::paint(juce::Graphics& g)
 	{
-		g.fillAll(findColour(juce::TreeView::ColourIds::backgroundColourId));
+		g.fillAll(juce::Colours::black);
 
 		paint(getData(), getDataSize(),g, 0, 0, getWidth(), getHeight());
 	}
 
-	void Graph::parentHierarchyChanged()
-	{
-		juce::Component::parentHierarchyChanged();
-
-		const auto* parent = getParentComponent();
-		if(!parent)
-			return;
-
-		setSize(parent->getWidth(), parent->getHeight());
-	}
-
 	void Graph::paint(const float* _data, const size_t _size, juce::Graphics& _g, const int _x, const int _y, const int _width, const int _height) const
 	{
-		const auto& style = m_editor.getStyle();
-
 		const float scaleX = static_cast<float>(_width)  / static_cast<float>(_size);
 		const float scaleY = static_cast<float>(_height);
 
@@ -53,26 +78,26 @@ namespace xtJucePlugin
 
 			if(i)
 			{
-				_g.setColour(juce::Colour(style.colGraphLine));
-				_g.drawLine(x0, y0, x1, y1, style.graphLineThickness);
+				_g.setColour(juce::Colour(static_cast<const WaveEditorStyle&>(g_style).colGraphLine));
+				_g.drawLine(x0, y0, x1, y1, static_cast<const WaveEditorStyle&>(g_style).graphLineThickness);
 			}
 
 			if(m_highlightedIndices.find(i) != m_highlightedIndices.end())
 			{
-				_g.setColour(style.colGraphLineHighlighted);
-				const auto s = style.graphPointSizeHighlighted;
+				_g.setColour(static_cast<const WaveEditorStyle&>(g_style).colGraphLineHighlighted);
+				const auto s = static_cast<const WaveEditorStyle&>(g_style).graphPointSizeHighlighted;
 				_g.fillEllipse(x1 - s * 0.5f, y1 - s * 0.5f, s, s);
 			}
 			else
 			{
-				_g.setColour(style.colGraphLine);
-				const auto s = style.graphPointSize;
+				_g.setColour(static_cast<const WaveEditorStyle&>(g_style).colGraphLine);
+				const auto s = static_cast<const WaveEditorStyle&>(g_style).graphPointSize;
 				_g.fillEllipse(x1 - s * 0.5f, y1 - s * 0.5f, s, s);
 			}
 		}
 	}
 
-	bool Graph::updateHoveredIndex(const juce::MouseEvent& _e)
+	bool Graph::updateHoveredIndex(const Rml::Event& _e)
 	{
 		const auto index = mouseToIndex(_e);
 		if(!isValidIndex(index))
@@ -84,44 +109,60 @@ namespace xtJucePlugin
 		return true;
 	}
 
-	void Graph::mouseDown(const juce::MouseEvent& _e)
+	void Graph::ProcessEvent(Rml::Event& event)
 	{
-		Component::mouseDown(_e);
+		switch (event.GetId())
+		{
+		case Rml::EventId::Mousedown:	mouseDown(event); break;
+		case Rml::EventId::Mousemove:	mouseMove(event); break;
+		case Rml::EventId::Mouseover:	mouseEnter(event); break;
+		case Rml::EventId::Mouseout:	mouseExit(event); break;
+		case Rml::EventId::Drag:		mouseDrag(event); break;
+		default:;
+		}
+	}
+
+	void Graph::mouseDown(Rml::Event& _e)
+	{
+		if (juceRmlUi::helper::isContextMenu(_e))
+		{
+			m_editor.openGraphPopupMenu(*this, _e);
+			return;
+		}
+		updateHoveredIndex(_e);
 		setLastMouseEvent(_e);
 		const auto i = mouseToIndex(_e);
 		if(isValidIndex(i))
 			modifyValue(static_cast<uint32_t>(i), mouseToUnnormalizedValue(_e));
 	}
 
-	void Graph::mouseMove(const juce::MouseEvent& _e)
+	void Graph::mouseMove(Rml::Event& _e)
 	{
-		Component::mouseMove(_e);
+		if(!juceRmlUi::helper::getKeyModShift(_e))
+			updateHoveredIndex(_e);
+
+		setLastMouseEvent(_e);
+	}
+
+	void Graph::mouseEnter(Rml::Event& _e)
+	{
 		updateHoveredIndex(_e);
 	}
 
-	void Graph::mouseEnter(const juce::MouseEvent& _e)
+	void Graph::mouseExit(Rml::Event& _e)
 	{
-		Component::mouseEnter(_e);
-		updateHoveredIndex(_e);
-	}
-
-	void Graph::mouseExit(const juce::MouseEvent& _e)
-	{
-		Component::mouseExit(_e);
 		setHoveredIndex(InvalidIndex);
 	}
 
-	void Graph::mouseDrag(const juce::MouseEvent& _e)
+	void Graph::mouseDrag(Rml::Event& _e)
 	{
-		Component::mouseDrag(_e);
-
-		if(!_e.mods.isShiftDown())
+		if(!juceRmlUi::helper::getKeyModShift(_e))
 		{
 			updateHoveredIndex(_e);
 
 			if(m_lastMouseEvent)
 			{
-				modifyValuesForRange(*m_lastMouseEvent, _e);
+				modifyValuesForRange(*m_lastMouseEvent, getMousePos(_e));
 			}
 			else if(isValidIndex(m_hoveredIndex))
 			{
@@ -137,30 +178,69 @@ namespace xtJucePlugin
 		setLastMouseEvent(_e);
 	}
 
-	int32_t Graph::mouseToIndex(const juce::MouseEvent& _e) const
+	int32_t Graph::mouseToIndex(const Rml::Event& _e) const
 	{
-		return _e.x * static_cast<int32_t>(getDataSize()) / (int32_t)getWidth();
+		return mouseToIndex(getMousePos(_e));
 	}
 
-	float Graph::mouseToNormalizedValue(const juce::MouseEvent& _e) const
+	int32_t Graph::mouseToIndex(const Rml::Vector2f& _e) const
+	{
+		return static_cast<int32_t>(_e.x) * static_cast<int32_t>(getDataSize()) / (int32_t)getWidth();
+	}
+
+	float Graph::mouseToNormalizedValue(const Rml::Event& _e) const
+	{
+		const auto mousePos = getMousePos(_e);
+		return mouseToNormalizedValue(mousePos);
+	}
+
+	float Graph::mouseToNormalizedValue(const Rml::Vector2f& _e) const
 	{
 		const auto v = 1.0f - static_cast<float>(_e.y) / static_cast<float>(getHeight() - 1);
 		return dsp56k::clamp(v, 0.0f, 1.0f);
 	}
 
-	float Graph::mouseToUnnormalizedValue(const juce::MouseEvent& _e) const
+	float Graph::mouseToUnnormalizedValue(const Rml::Event& _e) const
 	{
 		return unnormalize(mouseToNormalizedValue(_e));
 	}
 
-	const juce::MouseEvent* Graph::lastMouseEvent() const
+	float Graph::mouseToUnnormalizedValue(const Rml::Vector2f& _e) const
+	{
+		return unnormalize(mouseToNormalizedValue(_e));
+	}
+
+	Rml::Vector2f Graph::getMousePos(const Rml::Event& _e) const
+	{
+		auto p = juceRmlUi::helper::getMousePos(_e);
+		p.x -= m_parent->GetAbsoluteLeft();
+		p.y -= m_parent->GetAbsoluteTop();
+		return p;
+	}
+
+	const Rml::Vector2f* Graph::lastMouseEvent() const
 	{
 		return m_lastMouseEvent.get();
 	}
 
+	bool Graph::canDropFiles(const Rml::Event& _event, const std::vector<std::string>& _files)
+	{
+		if (_files.size() != 1)
+			return false;
+		return baseLib::filesystem::hasExtension(_files.front(), ".wav");
+	}
+
+	void Graph::dropFiles(const Rml::Event& _event, const juceRmlUi::FileDragData* _data, const std::vector<std::string>& _files)
+	{
+		if (_files.size() != 1)
+			return;
+		if (auto res = m_editor.importWaveFile(_files[0]))
+			m_editor.getGraphData().set(*res);
+	}
+
 	void Graph::onSourceChanged()
 	{
-		repaint();
+		m_canvas->repaint();
 	}
 
 	void Graph::onHoveredIndexChanged(const uint32_t _index)
@@ -178,7 +258,7 @@ namespace xtJucePlugin
 
 	void Graph::onHighlightedIndicesChanged(const std::set<uint32_t>& _indices)
 	{
-		repaint();
+		m_canvas->repaint();
 	}
 
 	void Graph::setHighlightedIndices(const std::set<uint32_t>& _indices)
@@ -226,12 +306,12 @@ namespace xtJucePlugin
 		onHoveredIndexChanged(m_hoveredIndex);
 	}
 
-	void Graph::setLastMouseEvent(const juce::MouseEvent& _e)
+	void Graph::setLastMouseEvent(const Rml::Event& _e)
 	{
-		m_lastMouseEvent = std::make_unique<juce::MouseEvent>(_e);
+		m_lastMouseEvent = std::make_unique<Rml::Vector2f>(getMousePos(_e));
 	}
 
-	void Graph::modifyValuesForRange(const juce::MouseEvent& _a, const juce::MouseEvent& _b)
+	void Graph::modifyValuesForRange(const Rml::Vector2f& _a, const Rml::Vector2f& _b)
 	{
 		auto indexA = mouseToIndex(_a);
 		auto indexB = mouseToIndex(_b);

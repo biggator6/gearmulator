@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <functional>
 
-#include "dsp56kEmu/ringbuffer.h"
+#include "dsp56kBase/ringbuffer.h"
 #include "dsp56kEmu/types.h"
 
 #include "synthLib/midiTypes.h"
@@ -39,8 +39,14 @@ namespace wLib
 
 		void ucYieldLoop(const std::function<bool()>& _continue);
 
+		// Request that any active ucYieldLoop exits immediately.
+		// Used during shutdown so the UC thread can check m_destroy.
+		void requestUcTermination();
+
 		void sendMidi(const synthLib::SMidiEvent& _ev);
 		void receiveMidi(std::vector<uint8_t>& _data);
+
+		uint32_t getEsaiFrameIndex() const { return m_esaiFrameIndex; }
 
 	protected:
 		void onEsaiCallback(dsp56k::Audio& _audio);
@@ -61,16 +67,17 @@ namespace wLib
 		std::vector<dsp56k::TWord> m_dummyOutput;
 
 		std::mutex m_esaiFrameAddedMutex;
-		std::condition_variable m_esaiFrameAddedCv;
+		dsp56k::ConditionVariable m_esaiFrameAddedCv;
 
 		std::mutex m_requestedFramesAvailableMutex;
-		std::condition_variable m_requestedFramesAvailableCv;
+		dsp56k::ConditionVariable m_requestedFramesAvailableCv;
 		size_t m_requestedFrames = 0;
 
 		bool m_haltDSP = false;
-		std::condition_variable m_haltDSPcv;
+		dsp56k::ConditionVariable m_haltDSPcv;
 		std::mutex m_haltDSPmutex;
 		bool m_processAudio = false;
 		bool m_bootCompleted = false;
+		bool m_terminateUcThread = false;
 	};
 }

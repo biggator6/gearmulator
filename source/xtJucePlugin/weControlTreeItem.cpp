@@ -4,11 +4,15 @@
 #include "weWaveTreeItem.h"
 #include "xtWaveEditor.h"
 
+#include "juceRmlUi/rmlMenu.h"
+
 namespace xtJucePlugin
 {
 	class WaveEditor;
 
-	ControlTreeItem::ControlTreeItem(WaveEditor& _editor, const xt::TableIndex _index) : m_editor(_editor), m_index(_index)
+	ControlTreeItem::ControlTreeItem(Rml::CoreInstance& _coreInstance, const std::string& _tag, WaveEditor& _editor)
+	: TreeItem(_coreInstance, _tag)
+	, m_editor(_editor)
 	{
 		m_onWaveChanged.set(_editor.getData().onWaveChanged, [this](const xt::WaveId& _wave)
 		{
@@ -16,36 +20,35 @@ namespace xtJucePlugin
 				onWaveChanged();
 		});
 
-		setPaintRootItemInBold(false);
-		setDrawsInLeftMargin(true);
-
 		// force initial update
 		m_wave = xt::WaveId(0);
 		setWave(xt::WaveId());
 	}
 
+	void ControlTreeItem::setNode(const juceRmlUi::TreeNodePtr& _node)
+	{
+		TreeItem::setNode(_node);
+	}
+
+	xt::TableIndex ControlTreeItem::getTableIndex() const
+	{
+		if (auto* node = dynamic_cast<ControlTreeNode*>(getNode().get()))
+			return node->getIndex();
+		return xt::TableIndex::invalid();
+	}
+
 	void ControlTreeItem::paintItem(juce::Graphics& _g, const int _width, const int _height)
 	{
 		if(const auto wave = m_editor.getData().getWave(m_wave))
-			WaveTreeItem::paintWave(*wave, _g, _width>>1, 0, _width>>1, _height, juce::Colour(0xffffffff));
-
-		TreeItem::paintItem(_g, _width, _height);
+			WaveTreeItem::paintWave(*wave, _g, 0, 0, _width, _height, 0xffffffff);
 	}
 
-	void ControlTreeItem::setWave(xt::WaveId _wave)
+	void ControlTreeItem::setWave(const xt::WaveId _wave)
 	{
-		switch (m_index.rawId())
-		{
-		case 61:	_wave = xt::WaveId(101);		break;
-		case 62:	_wave = xt::WaveId(100);		break;
-		case 63:	_wave = xt::WaveId(104);		break;
-		}
-		if(m_wave == _wave)
-			return;
 		m_wave = _wave;
 		const auto name = WaveTreeItem::getWaveName(m_wave);
-		char prefix[16] = {0};
-		(void)snprintf(prefix, std::size(prefix), "%02d: ", m_index.rawId());
+		char prefix[16] = {};
+		(void)snprintf(prefix, std::size(prefix), "%02d: ", getTableIndex().rawId());
 		setText(prefix + (name.empty() ? "-" : name));
 		repaintItem();
 	}
@@ -55,35 +58,70 @@ namespace xtJucePlugin
 		if(m_table == _table && !_tableHasChanged)
 			return;
 		m_table = _table;
-		setWave(m_editor.getData().getWaveId(_table, m_index));
+
+		auto table = m_editor.getData().getTable(m_table);
+
+		if (!table)
+			return;
+
+		if (xt::State::isSpeech(*table))
+		{
+			setText("Speech");
+			if (getTableIndex().rawId() == 2)
+				setWave(m_editor.getData().getWaveId(_table, getTableIndex()));
+			else
+				m_wave.invalidate();
+		}
+		else if (xt::State::isUpaw(*table))
+		{
+			setText("UPAW");
+			m_wave.invalidate();
+		}
+		else
+		{
+			switch (getTableIndex().rawId())
+			{
+			case 61: setWave(xt::WaveId(101)); break;
+			case 62: setWave(xt::WaveId(100)); break;
+			case 63: setWave(xt::WaveId(104)); break;
+			default: setWave(m_editor.getData().getWaveId(_table, getTableIndex())); break;
+			}
+		}
 	}
 
-	juce::var ControlTreeItem::getDragSourceDescription()
+	std::unique_ptr<juceRmlUi::DragData> ControlTreeItem::createDragData()
 	{
-		if(m_wave == g_invalidWaveIndex || xt::wave::isReadOnly(m_table) || xt::wave::isReadOnly(m_index))
-			return TreeViewItem::getDragSourceDescription();
+		if(m_wave == g_invalidWaveIndex || xt::wave::isReadOnly(m_table) || xt::wave::isReadOnly(getTableIndex()))
+			return {};
 
-		auto* desc = new WaveDesc(m_editor);
+		auto desc = std::make_unique<WaveDesc>(m_editor);
 
-		desc->waveId = m_wave;
+		desc->waveIds = {m_wave};
 		desc->source = WaveDescSource::ControlTableList;
-		desc->tableIndex = m_index;
+		desc->tableIndex = getTableIndex();
 
 		desc->fillData(m_editor.getData());
 
 		return desc;
 	}
 
-	bool ControlTreeItem::isInterestedInDragSource(const juce::DragAndDropTarget::SourceDetails& _dragSourceDetails)
+	bool ControlTreeItem::canDrop(const Rml::Event& _event, const DragSource* _source)
 	{
-		if(xt::wave::isReadOnly(m_table) || xt::wave::isReadOnly(m_index))
-			return false;
-		return WaveDesc::fromDragSource(_dragSourceDetails) != nullptr;
+		if(xt::wave::isReadOnly(m_table) || xt::wave::isReadOnly(getTableIndex()))
+			return TreeItem::canDrop(_event, _source);
+		auto* desc = WaveDesc::fromDragSource(_source);
+		if (desc == nullptr)
+			return TreeItem::canDrop(_event, _source);
+		if (desc->source == WaveDescSource::WaveList && desc->waveIds.size() != 1)
+			return TreeItem::canDrop(_event, _source);
+		if (desc->source == WaveDescSource::ControlTableList && desc->tableIndex == getTableIndex())
+			return TreeItem::canDrop(_event, _source);
+		return true;
 	}
 
-	void ControlTreeItem::itemDropped(const juce::DragAndDropTarget::SourceDetails& _dragSourceDetails, int _insertIndex)
+	void ControlTreeItem::drop(const Rml::Event& _event, const DragSource* _source, const juceRmlUi::DragData* _data)
 	{
-		const auto* waveDesc = WaveDesc::fromDragSource(_dragSourceDetails);
+		const auto* waveDesc = WaveDesc::fromDragSource(_source);
 		if(!waveDesc)
 			return;
 
@@ -92,41 +130,35 @@ namespace xtJucePlugin
 		// if the source is the control list, we swap two entries. if the source is the wave list, we add a new wave
 		if(waveDesc->source == WaveDescSource::ControlTableList)
 		{
-			if(data.swapTableEntries(m_table, m_index, waveDesc->tableIndex))
+			if(data.swapTableEntries(m_table, getTableIndex(), waveDesc->tableIndex))
 			{
-				setSelected(true, true, juce::dontSendNotification);
+				getNode()->setSelected(true, false);
 				data.sendTableToDevice(m_table);
 			}
 		}
-		else if(waveDesc->source == WaveDescSource::WaveList)
+		else if(waveDesc->source == WaveDescSource::WaveList && waveDesc->waveIds.size() == 1)
 		{
-			if(data.setTableWave(m_table, m_index, waveDesc->waveId))
+			if(data.setTableWave(m_table, getTableIndex(), waveDesc->waveIds.front()))
 				data.sendTableToDevice(m_table);
 		}
 	}
 
-	void ControlTreeItem::itemClicked(const juce::MouseEvent& _mouseEvent)
+	void ControlTreeItem::openContextMenu(const Rml::Event& _event)
 	{
-		if(!_mouseEvent.mods.isPopupMenu())
-		{
-			TreeItem::itemClicked(_mouseEvent);
-			return;
-		}
+		juceRmlUi::Menu menu;
 
-		juce::PopupMenu menu;
-
-		menu.addItem("Remove", [this]
+		menu.addEntry("Remove", [this]
 		{
-			if (m_editor.getData().setTableWave(m_table, m_index, g_invalidWaveIndex))
+			if (m_editor.getData().setTableWave(m_table, getTableIndex(), g_invalidWaveIndex))
 				m_editor.getData().sendTableToDevice(m_table);
 		});
-		menu.addItem("Select Wave", [this]
+		menu.addEntry("Select Wave", [this]
 		{
 			m_editor.setSelectedWave(m_wave);
 		});
-		menu.addSubMenu("Copy to", m_editor.createCopyToSelectedTableMenu(m_wave));
+		menu.addSubMenu("Copy to", std::move(m_editor.createCopyToSelectedTableMenu(m_wave)));
 
-		menu.showMenuAsync({});
+		menu.runModal(_event);
 	}
 
 	void ControlTreeItem::onWaveChanged() const

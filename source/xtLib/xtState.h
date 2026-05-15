@@ -92,23 +92,35 @@ namespace xt
 
 		void process(uint32_t _numSamples);
 
-		static bool setSingleName(std::vector<uint8_t>& _sysex, const std::string& _name);
+		static bool setSingleName(SysEx& _sysex, const std::string& _name);
 
 		static TableId getWavetableFromSingleDump(const SysEx& _single);
 
 		static void createSequencerMultiData(std::vector<uint8_t>& _data);
 
 		static bool parseWaveData(WaveData& _wave, const SysEx& _sysex);
+		static bool parseMw1WaveData(WaveData& _wave, const SysEx& _sysex);
+
 		static SysEx createWaveData(const WaveData& _wave, uint16_t _waveIndex, bool _preview);
 		static WaveData createinterpolatedTable(const WaveData& _a, const WaveData& _b, uint16_t _indexA, uint16_t _indexB, uint16_t _indexTarget);
 
 		static bool parseTableData(TableData& _table, const SysEx& _sysex);
+		static bool parseMw1TableData(TableData& _table, const SysEx& _sysex);
+
+		static std::vector<WaveId> getWavesForTable(const TableData& _table);
+
 		static SysEx createTableData(const TableData& _table, uint32_t _tableIndex, bool _preview);
 
 		static SysEx createCombinedPatch(const std::vector<SysEx>& _dumps);
 		static bool splitCombinedPatch(std::vector<SysEx>& _dumps, const SysEx& _combinedSingle);
 
 		static SysexCommand getCommand(const SysEx& _data);
+
+		static TableId getTableId(const SysEx& _data);
+		static WaveId getWaveId(const SysEx& _data);
+
+		static bool isSpeech(const TableData& _table);
+		static bool isUpaw(const TableData& _table);
 
 		template<size_t Size> static bool append(SysEx& _dst, const std::array<uint8_t, Size>& _src, uint32_t _checksumStartIndex)
 		{
@@ -121,13 +133,13 @@ namespace xt
 			return true;
 		}
 
-		static bool updateChecksum(SysEx& _src, uint32_t _startIndex)
+		static bool updateChecksum(SysEx& _src, const uint32_t _startIndex)
 		{
 			if(_src.size() < 3)
 				return false;
 			uint8_t& c = _src[_src.size() - 2];
 			c = 0;
-			for(size_t i= wLib::IdxCommand; i<_src.size()-2; ++i)
+			for(size_t i = _startIndex; i<_src.size()-2; ++i)
 				c += _src[i];
 			c &= 0x7f;
 			return true;

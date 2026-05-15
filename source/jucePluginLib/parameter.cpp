@@ -4,12 +4,18 @@
 
 namespace pluginLib
 {
+	namespace
+	{
+		std::set<Parameter*> g_pendingParameterChanges;
+	}
+
 	Parameter::Parameter(Controller& _controller, const Description& _desc, const uint8_t _partNum, const int _uniqueId, const PartFormatter& _partFormatter)
 		: juce::RangedAudioParameter(genId(_desc, _partNum, _uniqueId), _partFormatter(_partNum, _desc.isNonPartSensitive()) + " " + _desc.displayName)
 		, m_controller(_controller)
 		, m_desc(_desc)
 		, m_part(_partNum)
 		, m_uniqueId(_uniqueId)
+		, m_pendingParameterChange(nullptr)
 	{
 		m_range.start = static_cast<float>(m_desc.range.getStart());
 		m_range.end = static_cast<float>(m_desc.range.getEnd());
@@ -19,9 +25,14 @@ namespace pluginLib
 		m_value.addListener(this);
     }
 
-    void Parameter::valueChanged(juce::Value&)
+	Parameter::~Parameter()
+	{
+		g_pendingParameterChanges.erase(this);
+	}
+
+	void Parameter::valueChanged(juce::Value&)
     {
-		sendToSynth();
+		sendToSynth(m_lastValueOrigin);
 		onValueChanged(this);
 	}
 
@@ -38,7 +49,7 @@ namespace pluginLib
 		m_value.setValue(newValue);
 	}
 
-    void Parameter::sendToSynth()
+    void Parameter::sendToSynth(const Origin _origin)
     {
 		const float floatValue = m_value.getValue();
 		const auto value = juce::roundToInt(floatValue);
@@ -53,17 +64,22 @@ namespace pluginLib
 		{
 			if(m_rateLimit)
 			{
-				sendParameterChangeDelayed(value, ++m_uniqueDelayCallbackId);
+				sendParameterChangeDelayed(value, _origin);
 			}
 			else
 			{
-				m_lastSendTime = milliseconds();
-				m_controller.sendParameterChange(*this, value);
+				sendParameterChangeNow(value, _origin);
 			}
 		}
 
 		m_lastValue = value;
     }
+
+	void Parameter::sendParameterChangeNow(const ParamValue _value, const Origin _origin)
+	{
+		m_lastSendTime = milliseconds();
+		m_controller.sendParameterChange(*this, _value, _origin);
+	}
 
     uint64_t Parameter::milliseconds()
     {
@@ -71,27 +87,57 @@ namespace pluginLib
 		return t.count();
     }
 
-    void Parameter::sendParameterChangeDelayed(const ParamValue _value, uint32_t _uniqueId)
-    {
-		if(_uniqueId != m_uniqueDelayCallbackId)
-			return;
+	void Parameter::scheduleTimer(const uint64_t _delayMs)
+	{
+		g_pendingParameterChanges.insert(this);
+		juce::Timer::callAfterDelay(static_cast<int>(_delayMs), [this]
+		{
+			if (g_pendingParameterChanges.count(this))
+				sendPendingParameterChange();
+		});
+	}
 
-		const auto ms = milliseconds();
+	void Parameter::sendParameterChangeDelayed(const ParamValue _value, Origin _origin)
+	{
+		const auto now = milliseconds();
+		const auto elapsed = now - m_lastSendTime;
 
-		const auto elapsed = ms - m_lastSendTime;
 		if(elapsed >= m_rateLimit)
 		{
-			m_lastSendTime = ms;
-			m_controller.sendParameterChange(*this, _value);
+			m_pendingParameterChange = nullptr;
+			sendParameterChangeNow(_value, _origin);
 		}
 		else
 		{
-			juce::Timer::callAfterDelay(static_cast<int>(elapsed), [this, _value, _uniqueId]
+			if (!m_pendingParameterChange)
+				scheduleTimer(m_rateLimit - elapsed);
+
+			m_pendingParameterChange = [this, _value, _origin]
 			{
-				sendParameterChangeDelayed(_value, _uniqueId);
-			});
+				sendParameterChangeNow(_value, _origin);
+			};
 		}
     }
+
+	void Parameter::sendPendingParameterChange()
+	{
+		if (!m_pendingParameterChange)
+			return;
+
+		// Guard against juce::Timer firing too early
+		if(m_rateLimit)
+		{
+			const auto elapsed = milliseconds() - m_lastSendTime;
+			if(elapsed < m_rateLimit)
+			{
+				scheduleTimer(m_rateLimit - elapsed);
+				return;
+			}
+		}
+
+		m_pendingParameterChange();
+		m_pendingParameterChange = nullptr;
+	}
 
     int Parameter::clampValue(const int _value) const
     {
@@ -100,21 +146,21 @@ namespace pluginLib
 
     void Parameter::setValueNotifyingHost(const float _value, const Origin _origin)
     {
-		ScopedChangeGesture g(*this);
+		ScopedChangeGesture g(*this, _origin);
 		setUnnormalizedValue(juce::roundToInt(convertFrom0to1(_value)), _origin);
 		notifyHost(_value);
 	}
 
     void Parameter::setUnnormalizedValueNotifyingHost(const float _value, const Origin _origin)
     {
-		ScopedChangeGesture g(*this);
+		ScopedChangeGesture g(*this, _origin);
 		setUnnormalizedValue(juce::roundToInt(_value), _origin);
 		notifyHost(convertTo0to1(_value));
     }
 
     void Parameter::setUnnormalizedValueNotifyingHost(const int _value, const Origin _origin)
     {
-		ScopedChangeGesture g(*this);
+		ScopedChangeGesture g(*this, _origin);
 		setUnnormalizedValue(_value, _origin);
 		notifyHost(convertTo0to1(static_cast<float>(_value)));
     }
@@ -142,6 +188,8 @@ namespace pluginLib
 
     void Parameter::pushChangeGesture()
     {
+		if (!getDescription().isPublic)
+			return;
 		if(!m_changeGestureCount)
 			beginChangeGesture();
 		++m_changeGestureCount;
@@ -149,10 +197,34 @@ namespace pluginLib
 
     void Parameter::popChangeGesture()
     {
+		if (!getDescription().isPublic)
+			return;
+		
 		assert(m_changeGestureCount > 0);
 		--m_changeGestureCount;
+
 		if(!m_changeGestureCount)
+		{
+			// Flush any pending rate-limited parameter value when gesture ends
+			sendPendingParameterChange();
 			endChangeGesture();
+		}
+	}
+
+    bool Parameter::requiresGesture(Origin _origin)
+    {
+	    switch (_origin)
+	    {
+	    case Origin::Unknown:
+	    case Origin::Ui:
+			return true;
+	    case Origin::Derived:
+	    case Origin::PresetChange:
+	    case Origin::Midi:
+	    case Origin::HostAutomation:
+		default:
+			return false;
+	    }
     }
 
     bool Parameter::isMetaParameter() const
@@ -180,7 +252,7 @@ namespace pluginLib
 		m_value.setValue(clampValue(_newValue));
 
 		if(_origin != Origin::Derived)
-			sendToSynth();
+			sendToSynth(_origin);
 
 		forwardToDerived(_newValue);
     }
@@ -232,11 +304,18 @@ namespace pluginLib
 		m_notifyingHost = false;
     }
 
-    juce::String Parameter::genId(const Description& d, const int part, const int uniqueId)
+    juce::ParameterID Parameter::genId(const Description& d, const int part, const int uniqueId)
 	{
+		juce::String s;
+
 		if(uniqueId > 0)
-			return juce::String::formatted("%d_%d_%d_%d", static_cast<int>(d.page), part, d.index, uniqueId);
-		return juce::String::formatted("%d_%d_%d", static_cast<int>(d.page), part, d.index);
+			s = juce::String::formatted("%d_%d_%d_%d", static_cast<int>(d.page), part, d.index, uniqueId);
+		else
+			s = juce::String::formatted("%d_%d_%d", static_cast<int>(d.page), part, d.index);
+
+		if (d.version > 0)
+			return { s, d.version };
+		return { s };
 	}
 
 	float Parameter::getValueForText(const juce::String& _text) const
@@ -285,16 +364,15 @@ namespace pluginLib
 		_param->m_derivedParameters.insert(this);
 	}
 
-	Parameter::ScopedChangeGesture::ScopedChangeGesture(Parameter& _p) : m_parameter(_p)
+	Parameter::ScopedChangeGesture::ScopedChangeGesture(Parameter& _p, const Origin _origin) : m_parameter(_p), m_origin(_origin)
     {
-		if(_p.getDescription().isPublic)
+		if(_p.getDescription().isPublic && requiresGesture(_origin))
 		    _p.pushChangeGesture();
     }
 
     Parameter::ScopedChangeGesture::~ScopedChangeGesture()
     {
-		if(m_parameter.getDescription().isPublic)
+		if(m_parameter.getDescription().isPublic && requiresGesture(m_origin))
 		    m_parameter.popChangeGesture();
     }
-
 }

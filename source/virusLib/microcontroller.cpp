@@ -258,8 +258,44 @@ bool Microcontroller::sendPreset(const uint8_t program, const TPreset& preset, c
 
 	std::lock_guard lock(m_mutex);
 
+	if(isMulti)
+	{
+		// if we want to send a new preset while still waiting for the upgraded one, ignore as its obsolete
+		if (m_sentPresetProgram == 0 && m_sentPresetIsMulti)
+			m_sentPresetProgram = 0xff;
+
+		m_multiEditBuffer = preset;
+
+		m_globalSettings[PLAY_MODE] = PlayModeMulti;
+	}
+	else
+	{
+		if(program == SINGLE)
+		{
+			m_globalSettings[PLAY_MODE] = PlayModeSingle;
+			m_singleEditBuffer = preset;
+
+			// if we want to send a new preset while still waiting for the upgraded one, ignore as its obsolete
+			 if (!m_sentPresetIsMulti && m_sentPresetProgram == SINGLE)
+				m_sentPresetProgram = 0xff;
+		}
+		else if(program < m_singleEditBuffers.size())
+		{
+			if(program >= getPartCount())
+				return false;
+
+			// if we want to send a new preset while still waiting for the upgraded one, ignore as its obsolete
+			if (!m_sentPresetIsMulti && m_sentPresetProgram == program)
+				m_sentPresetProgram = 0xff;
+
+			m_singleEditBuffers[program] = preset;
+		}
+	}
+
 	if(m_loadingState || waitingForPresetReceiveConfirmation())
 	{
+		LOG("Preset queued: " << (isMulti ? "Multi" : "Single") << " program " << static_cast<int>(program) << " (loading=" << m_loadingState << " waitingConfirm=" << waitingForPresetReceiveConfirmation() << " queueSize=" << m_pendingPresetWrites.size() << ")");
+
 		// if we write a multi or a multi mode single, remove a pending single for single mode
 		// If we write a single-mode single, remove all multi-related pending writes
 		const auto multiRelated = isMulti || program != SINGLE;
@@ -291,28 +327,6 @@ bool Microcontroller::sendPreset(const uint8_t program, const TPreset& preset, c
 	}
 
 	receiveUpgradedPreset();
-
-	if(isMulti)
-	{
-		m_multiEditBuffer = preset;
-
-		m_globalSettings[PLAY_MODE] = PlayModeMulti;
-	}
-	else
-	{
-		if(program == SINGLE)
-		{
-			m_globalSettings[PLAY_MODE] = PlayModeSingle;
-			m_singleEditBuffer = preset;
-		}
-		else if(program < m_singleEditBuffers.size())
-		{
-			if(program >= getPartCount())
-				return false;
-
-			m_singleEditBuffers[program] = preset;
-		}
-	}
 
 	writeHostBitsWithWait(0,1);
 	// Send header
@@ -463,7 +477,7 @@ bool Microcontroller::sendMIDI(const SMidiEvent& _ev, FrontpanelState* _fpState/
 			{
 				applyToSingleEditBuffer(PAGE_B, singleMode ? SINGLE : channel, _ev.b, _ev.c);
 				auto e = _ev;
-				e.source = MidiEventSource::Plugin;
+				e.source = MidiEventSource::Device;
 				m_midiOutput.push_back(e);
 			}
 		}
@@ -487,7 +501,7 @@ bool Microcontroller::sendMIDI(const SMidiEvent& _ev, FrontpanelState* _fpState/
 	return true;
 }
 
-bool Microcontroller::sendSysex(const std::vector<uint8_t>& _data, std::vector<SMidiEvent>& _responses, const MidiEventSource _source)
+bool Microcontroller::sendSysex(const synthLib::SysexBuffer& _data, std::vector<SMidiEvent>& _responses, const MidiEventSource _source)
 {
 	if (_data.size() < 7)
 		return true;	// invalid sysex or not directed to us
@@ -524,7 +538,16 @@ bool Microcontroller::sendSysex(const std::vector<uint8_t>& _data, std::vector<S
 		if(!isValid(_dump))
 			return;
 
-		SMidiEvent ev(_source);
+		if (_type == DUMP_SINGLE)
+		{
+			SMidiEvent ev(MidiEventSource::Device);
+			ev.sysex = createSingleDump(m_rom, _bank, _program, _dump, deviceId);
+			_responses.emplace_back(std::move(ev));
+			return;
+		}
+
+		// Multi dump (not extracted to utility as it's only used here)
+		SMidiEvent ev(MidiEventSource::Device);
 
 		auto& response = ev.sysex;
 
@@ -534,14 +557,12 @@ bool Microcontroller::sendSysex(const std::vector<uint8_t>& _data, std::vector<S
 		response.push_back(toMidiByte(_bank));
 		response.push_back(_program);
 
-		const auto size = _type == DUMP_SINGLE ? m_rom.getSinglePresetSize() : m_rom.getMultiPresetSize();
-
+		const auto size = m_rom.getMultiPresetSize();
 		const auto modelABCsize = ROMFile::getSinglePresetSize(DeviceModel::ABC);
 
 		for(size_t i=0; i<modelABCsize; ++i)
 			response.push_back(_dump[i]);
 
-		// checksum for ABC models comes after 256 bytes of preset data
 		response.push_back(calcChecksum(response));
 
 		if (size > modelABCsize)
@@ -549,7 +570,6 @@ bool Microcontroller::sendSysex(const std::vector<uint8_t>& _data, std::vector<S
 			for (size_t i = modelABCsize; i < size; ++i)
 				response.push_back(_dump[i]);
 
-			// Second checksum for D model: That checksum is to be calculated over the whole preset data, including the ABC checksum
 			response.push_back(calcChecksum(response));
 		}
 
@@ -609,7 +629,7 @@ bool Microcontroller::sendSysex(const std::vector<uint8_t>& _data, std::vector<S
 
 	auto buildGlobalResponse = [&](const uint8_t _param)
 	{
-		SMidiEvent ev(_source);
+		SMidiEvent ev(MidiEventSource::Device);
 		auto& response = ev.sysex;
 
 		buildResponseHeader(ev);
@@ -666,8 +686,8 @@ bool Microcontroller::sendSysex(const std::vector<uint8_t>& _data, std::vector<S
 
 		const uint8_t channel = _part == SINGLE ? 0 : _part;
 
-		for (const auto cc : g_pageA)	 _responses.emplace_back(_source, M_CONTROLCHANGE + channel, cc, single[cc], 0);
-		for (const auto cc : g_pageB)	 _responses.emplace_back(_source, M_POLYPRESSURE, cc, single[cc + 128], 0);
+		for (const auto cc : g_pageA)	 _responses.emplace_back(MidiEventSource::Device, M_CONTROLCHANGE + channel, cc, single[cc], 0);
+		for (const auto cc : g_pageB)	 _responses.emplace_back(MidiEventSource::Device, M_POLYPRESSURE, cc, single[cc + 128], 0);
 	};
 
 	auto enqueue = [&]
@@ -1083,6 +1103,8 @@ void Microcontroller::process()
 	const auto preset = m_pendingPresetWrites.front();
 	m_pendingPresetWrites.pop_front();
 
+	LOG("Dequeuing pending preset: " << (preset.isMulti ? "Multi" : "Single") << " program " << static_cast<int>(preset.program) << " (remaining=" << m_pendingPresetWrites.size() << ")");
+
 	sendPreset(preset.program, preset.data, preset.isMulti);
 }
 
@@ -1244,7 +1266,7 @@ PresetVersion Microcontroller::getPresetVersion(const uint8_t v)
 	return A;
 }
 
-uint8_t Microcontroller::calcChecksum(const std::vector<uint8_t>& _data, const size_t _offset, const size_t _count/* = std::numeric_limits<size_t>::max()*/)
+uint8_t Microcontroller::calcChecksum(const synthLib::SysexBuffer& _data, const size_t _offset, const size_t _count/* = std::numeric_limits<size_t>::max()*/)
 {
 	uint8_t cs = 0;
 
@@ -1379,6 +1401,12 @@ void Microcontroller::receiveUpgradedPreset()
 	if(upgradedPreset.empty())
 		return;
 
+	if (m_sentPresetProgram == 0xff)
+	{
+		LOG("Ignoring upgraded preset as it became obsolete");
+		return;
+	}
+
 	LOG("Replacing edit buffer for " << (m_sentPresetIsMulti ? "multi" : "single") << " program " << static_cast<int>(m_sentPresetProgram) << " with upgraded preset");
 
 	auto copyTo = [&upgradedPreset, this](TPreset& _preset)
@@ -1403,5 +1431,45 @@ void Microcontroller::receiveUpgradedPreset()
 bool Microcontroller::isValid(const TPreset& _preset)
 {
 	return _preset[240] >= 32 && _preset[240] <= 127;
+}
+
+SysexBuffer Microcontroller::createSingleDump(const ROMFile& _rom, const BankNumber _bank, const uint8_t _program, const TPreset& _preset, const uint8_t _deviceId)
+{
+	SysexBuffer sysex;
+	sysex.reserve(512 + 16);
+
+	sysex.push_back(M_STARTOFSYSEX);
+	sysex.push_back(0x00);
+	sysex.push_back(0x20);
+	sysex.push_back(0x33);
+	sysex.push_back(0x01);
+	sysex.push_back(_deviceId);
+
+	sysex.push_back(DUMP_SINGLE);
+	sysex.push_back(toMidiByte(_bank));
+	sysex.push_back(_program);
+
+	const auto presetSize = _rom.getSinglePresetSize();
+	const auto modelABCsize = ROMFile::getSinglePresetSize(DeviceModel::ABC);
+
+	for (size_t i = 0; i < modelABCsize; ++i)
+		sysex.push_back(_preset[i]);
+
+	// First checksum covers the ABC portion (256 bytes). All models include this.
+	sysex.push_back(calcChecksum(sysex));
+
+	// TI/TI2/Snow presets are 512 bytes. Append the extended data with a second
+	// checksum that covers the entire message including the first checksum.
+	if (presetSize > modelABCsize)
+	{
+		for (size_t i = modelABCsize; i < presetSize; ++i)
+			sysex.push_back(_preset[i]);
+
+		sysex.push_back(calcChecksum(sysex));
+	}
+
+	sysex.push_back(M_ENDOFSYSEX);
+
+	return sysex;
 }
 }

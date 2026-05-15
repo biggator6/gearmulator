@@ -6,16 +6,22 @@
 #include "xtRom.h"
 
 #include "mc68k/logging.h"
+
+#define MC68K_CLASS xt::XtUc
+#include "mc68k/musashiEntry.h"
+
 #include "dsp56kEmu/utils.h"
 
 namespace xt
 {
-	XtUc::XtUc(const Rom& _rom)
+	XtUc::XtUc(const Rom& _rom, const bool _voiceExpansion/* = false*/)
 	: m_flash(m_romRuntimeData.data(), m_romRuntimeData.size(), false, true)
 	, m_pic(*this, m_lcd)
 	{
 		if(!_rom.isValid())
 			return;
+
+		m_useVoiceExpansion = _voiceExpansion;
 
 		memcpy(m_romRuntimeData.data(), _rom.getData().data(), g_romSize);
 		m_memory.fill(0);
@@ -24,6 +30,12 @@ namespace xt
 
 		reset();
 		setPC(0x100100);
+
+		if (m_useVoiceExpansion)
+		{
+			// Signal expansion board presence to the firmware via PORTGP hardware config pins
+			getPortGP().writeRX(0x00);
+		}
 
 		getPortGP().setWriteTXCallback([this](const mc68k::Port&)
 		{
@@ -56,6 +68,11 @@ namespace xt
 //		LOG("PC: " << HEX(getPC()));
 		const auto cycles = Mc68k::exec();
 		m_hdiA.exec(cycles);
+		if (m_useVoiceExpansion)
+		{
+			m_hdiB.exec(cycles);
+			m_hdiC.exec(cycles);
+		}
 		return cycles;
 	}
 
@@ -65,12 +82,12 @@ namespace xt
 
 		if(addr < g_ramSize)
 		{
-			return readW(m_memory.data(), addr);
+			return mc68k::memoryOps::readU16(m_memory.data(), addr);
 		}
 
 		if(addr >= g_romAddr && addr < g_romAddr + Rom::Size)
 		{
-			const auto r = readW(m_romRuntimeData.data(), addr - g_romAddr);
+			const auto r = mc68k::memoryOps::readU16(m_romRuntimeData.data(), addr - g_romAddr);
 //			LOG("read16 from ROM addr=" << HEXN(_addr, 8) << " val=" << HEXN(r, 4));
 			return r;
 		}
@@ -86,12 +103,12 @@ namespace xt
 
 		if(addr < g_ramSize)
 		{
-			return readW(m_memory.data(), addr);
+			return mc68k::memoryOps::readU16(m_memory.data(), addr);
 		}
 
 		if(addr >= g_romAddr && addr < g_romAddr + Rom::Size)
 		{
-			const auto r = readW(m_romRuntimeData.data(), addr - g_romAddr);
+			const auto r = mc68k::memoryOps::readU16(m_romRuntimeData.data(), addr - g_romAddr);
 //			LOG("read16 from ROM addr=" << HEXN(_addr, 8) << " val=" << HEXN(r, 4));
 			return r;
 		}
@@ -100,6 +117,15 @@ namespace xt
 
 		if (m_hdiA.isInRange(pa))
 			return m_hdiA.read16(pa);
+
+		if (m_useVoiceExpansion)
+		{
+			if (m_hdiB.isInRange(pa))
+				return m_hdiB.read16(pa);
+
+			if (m_hdiC.isInRange(pa))
+				return m_hdiC.read16(pa);
+		}
 
 //		LOG("read16 addr=" << HEXN(_addr, 8) << ", pc=" << HEXN(getPC(), 8));
 
@@ -121,6 +147,15 @@ namespace xt
 		if(m_hdiA.isInRange(pa))
 			return m_hdiA.read8(pa);
 
+		if (m_useVoiceExpansion)
+		{
+			if(m_hdiB.isInRange(pa))
+				return m_hdiB.read8(pa);
+
+			if(m_hdiC.isInRange(pa))
+				return m_hdiC.read8(pa);
+		}
+
 //		LOG("read8 addr=" << HEXN(addr, 8) << ", pc=" << HEXN(getPC(), 8));
 
 		return Mc68k::read8(addr);
@@ -132,13 +167,15 @@ namespace xt
 
 		if(addr < g_ramSize)
 		{
-			writeW(m_memory.data(), addr, val);
+			mc68k::memoryOps::writeU16(m_memory.data(), addr, val);
 			return;
 		}
 
 		if(addr >= g_romAddr && addr < g_romAddr + Rom::Size)
 		{
+#if defined(_DEBUG) && defined(_WIN32)
 			MCLOG("write16 TO ROM addr=" << MCHEXN(addr, 8) << ", value=" << MCHEXN(val,4) << ", pc=" << MCHEXN(getPC(), 8));
+#endif
 			m_flash.write(addr - g_romAddr, val);
 			return;
 		}
@@ -149,6 +186,21 @@ namespace xt
 		{
 			m_hdiA.write16(pa, val);
 			return;
+		}
+
+		if (m_useVoiceExpansion)
+		{
+			if (m_hdiB.isInRange(pa))
+			{
+				m_hdiB.write16(pa, val);
+				return;
+			}
+
+			if (m_hdiC.isInRange(pa))
+			{
+				m_hdiC.write16(pa, val);
+				return;
+			}
 		}
 
 		Mc68k::write16(addr, val);
@@ -166,7 +218,9 @@ namespace xt
 
 		if(addr >= g_romAddr && addr < g_romAddr + Rom::Size)
 		{
+#if defined(_DEBUG) && defined(_WIN32)
 			MCLOG("write8 TO ROM addr=" << MCHEXN(addr, 8) << ", value=" << MCHEXN(val,2) << ", pc=" << MCHEXN(getPC(), 8));
+#endif
 			m_flash.write(addr - g_romAddr, val);
 			return;
 		}
@@ -178,6 +232,21 @@ namespace xt
 		{
 			m_hdiA.write8(pa, val);
 			return;
+		}
+
+		if (m_useVoiceExpansion)
+		{
+			if (m_hdiB.isInRange(pa))
+			{
+				m_hdiB.write8(pa, val);
+				return;
+			}
+
+			if (m_hdiC.isInRange(pa))
+			{
+				m_hdiC.write8(pa, val);
+				return;
+			}
 		}
 
 		Mc68k::write8(addr, val);

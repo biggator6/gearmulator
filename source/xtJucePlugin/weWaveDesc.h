@@ -2,15 +2,28 @@
 
 #include "weData.h"
 
-#include "jucePluginEditorLib/dragAndDropObject.h"
+#include "juceRmlUi/rmlDragData.h"
 
-#include "juce_gui_basics/juce_gui_basics.h"
+namespace juce
+{
+	class File;
+}
+
+namespace juceRmlUi
+{
+	class DragSource;
+}
+
+namespace pluginLib
+{
+	class Processor;
+}
 
 namespace xtJucePlugin
 {
 	class WaveEditor;
 
-	enum class WaveDescSource
+	enum class WaveDescSource : uint8_t
 	{
 		Invalid,
 		ControlTableList,
@@ -18,27 +31,31 @@ namespace xtJucePlugin
 		TablesList
 	};
 
-	struct WaveDesc : jucePluginEditorLib::DragAndDropObject
+	struct WaveDesc : juceRmlUi::DragData
 	{
 		WaveDesc(WaveEditor& _editor) : m_editor(_editor) {}
 
-		static WaveDesc* fromDragSource(const juce::DragAndDropTarget::SourceDetails& _sourceDetails);
+		static WaveDesc* fromDragSource(const juceRmlUi::DragSource* _sourceDetails);
+		static WaveDesc* fromDragData(juceRmlUi::DragData* _data);
 
-		bool writeToFile(const juce::File& _file) const override;
-		bool canDropExternally() const override;
-		std::string getExportFileName(const pluginLib::Processor& _processor) const override;
+		bool canExportAsFiles() const override;
+		bool getFilesForExport(std::vector<std::string>& _files, bool& _filesAreTemporary) override;
+
+		bool writeToFile(const juce::File& _file) const;
 
 		void fillData(const WaveEditorData& _data);
 
+		std::string getExportFileName(const pluginLib::Processor& _processor) const;
+
 		WaveEditor& m_editor;
 
-		xt::WaveId waveId;
-		xt::TableId tableId;
+		std::vector<xt::WaveId> waveIds;
+		std::vector<xt::TableId> tableIds;
 
 		xt::TableIndex tableIndex;
 
-		std::optional<xt::WaveData> waveData;
-		std::optional<xt::TableData> tableData;
+		std::vector<xt::WaveData> waveDatas;
+		std::vector<xt::TableData> tableDatas;
 
 		WaveDescSource source = WaveDescSource::Invalid;
 	};

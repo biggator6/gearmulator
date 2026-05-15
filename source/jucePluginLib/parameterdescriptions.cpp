@@ -2,7 +2,7 @@
 
 #include <cassert>
 
-#include "dsp56kEmu/logging.h"
+#include "dsp56kBase/logging.h"
 
 #include "synthLib/midiTypes.h"
 
@@ -232,6 +232,13 @@ namespace pluginLib
 			d.toText = valueList;
 
 			d.page = static_cast<uint8_t>(readPropertyInt("page"));
+			d.version = readPropertyIntWithDefault("version", d.version);
+
+			if (d.version < 0)
+			{
+				errors << name << ": version must be non-negative but is " << d.version << '\n';
+				continue;
+			}
 
 			auto index = readPropertyInt("index");
 
@@ -295,7 +302,7 @@ namespace pluginLib
 				}
 			}
 
-			m_descriptions.push_back(d);
+			m_descriptions.emplace_back(std::move(d));
 		}
 
 		for (size_t i=0; i<m_descriptions.size(); ++i)
@@ -779,18 +786,18 @@ namespace pluginLib
 	{
 		const auto ccStr = _value["cc"].toString().toStdString();
 		const auto ppStr = _value["pp"].toString().toStdString();
+		const auto nrpnStr = _value["nrpn"].toString().toStdString();
 		const auto paramName = _value["param"].toString().toStdString();
 
 		if(ccStr.empty() && ppStr.empty())
 		{
-			_errors << "Controller needs to define control change (cc) or poly pressure (pp) parameter\n";
+			_errors << "Controller needs to define control change (cc), poly pressure (pp) or NRPN (nrpn) parameter\n";
 			return;
 		}
 
-		static constexpr uint8_t Invalid = 0xff;
-
-		uint8_t cc = Invalid;
-		uint8_t pp = Invalid;
+		uint8_t cc = 0xff;
+		uint8_t pp = 0xff;
+		uint16_t nrpn = 0xffff;
 
 		if(!ccStr.empty())
 		{
@@ -812,6 +819,16 @@ namespace pluginLib
 			}
 		}
 
+		if(!nrpnStr.empty())
+		{
+			nrpn = static_cast<uint8_t>(::strtol(nrpnStr.c_str(), nullptr, 16));
+			if(nrpn < 0 || nrpn > 0x3fff)
+			{
+				_errors << "NRPN parameter needs to be in range $0-$3fff, param " << paramName << '\n';
+				return;
+			}
+		}
+
 		if(paramName.empty())
 		{
 			_errors << "Target parameter name 'param' must not be empty\n";
@@ -826,10 +843,13 @@ namespace pluginLib
 			return;
 		}
 
-		if(cc != Invalid)
+		if(cc != 0xff)
 			m_controllerMap.add(synthLib::M_CONTROLCHANGE, cc, paramIndex);
 
-		if(pp != Invalid)
+		if(pp != 0xff)
 			m_controllerMap.add(synthLib::M_POLYPRESSURE, pp, paramIndex);
+
+		if(nrpn != 0xffff)
+			m_controllerMap.add(ControllerMap::NrpnType, nrpn, paramIndex);
 	}
 }

@@ -3,13 +3,13 @@
 #include "midiInput.h"
 #include "portmidi/pm_common/portmidi.h"
 #include "synthLib/midiTypes.h"
-#include "dsp56kEmu/logging.h"
+#include "dsp56kBase/logging.h"
 
 extern PmTimestamp returnTimeProc(void*);
 
 namespace mqConsoleLib
 {
-MidiOutput::MidiOutput(const std::string& _deviceName) : MidiDevice(_deviceName, true)
+MidiOutput::MidiOutput(const std::string& _deviceName) : MidiDevice(_deviceName, true), m_parser(synthLib::MidiEventSource::Device)
 {
 	Device::openDevice();
 }

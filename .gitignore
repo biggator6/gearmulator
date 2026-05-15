@@ -3,6 +3,7 @@
 *.aps
 /.vs
 /.vscode
+/.claude
 /out/
 /temp2/cmake_win64
 /source/jucePlugin_24.01.2022.zip
@@ -13,3 +14,8 @@
 *debug.sh
 CMakeUserPresets.json
 bin/
+.DS_Store
+_copilot.bat
+target/logs/
+claude*.bat
+.mcp.json

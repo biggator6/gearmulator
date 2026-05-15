@@ -5,8 +5,15 @@
 
 #include "baseLib/binarystream.h"
 
+#include "synthLib/os.h"
+
+#include "mcpServerLib/mcpPluginServer.h"
+#include "mcpDomTools.h"
+#include "mcpPatchManagerTools.h"
+#include "networkLib/logging.h"
+
 #ifdef ZYNTHIAN
-#include "dsp56kEmu/logging.h"
+#include "dsp56kBase/logging.h"
 #endif
 
 namespace jucePluginEditorLib
@@ -19,6 +26,26 @@ namespace jucePluginEditorLib
 			// https://discourse.zynthian.org/t/deadlock-when-attempting-to-log-to-stdout/10169
 		}
 #endif
+
+		std::string getPluginFormatName(const juce::AudioProcessor::WrapperType _wrapperType, const std::string& _moduleFilePath)
+		{
+			switch (_wrapperType)
+			{
+			case juce::AudioProcessor::wrapperType_VST:         return "vst2";
+			case juce::AudioProcessor::wrapperType_VST3:        return "vst3";
+			case juce::AudioProcessor::wrapperType_AudioUnit:   return "au";
+			case juce::AudioProcessor::wrapperType_AudioUnitv3: return "auv3";
+			case juce::AudioProcessor::wrapperType_LV2:         return "lv2";
+			case juce::AudioProcessor::wrapperType_Standalone:  return "standalone";
+			case juce::AudioProcessor::wrapperType_AAX:         return "aax";
+			case juce::AudioProcessor::wrapperType_Undefined:
+			default:
+				// CLAP reports as wrapperType_Undefined, detect from module file path
+				if (_moduleFilePath.find(".clap") != std::string::npos)
+					return "clap";
+				return {};
+			}
+		}
 	}
 
 	Processor::Processor(const BusesProperties& _busesProperties, const juce::PropertiesFile::Options& _configOptions, const pluginLib::Processor::Properties& _properties)
@@ -29,10 +56,15 @@ namespace jucePluginEditorLib
 #ifdef ZYNTHIAN
 		Logging::setLogFunc(&noLoggingFunc);
 #endif
+		savePluginLoadPath();
+
+		if (m_config.getBoolValue("enableMcpServer", false))
+			startMcpServer();
 	}
 
 	Processor::~Processor()
 	{
+		stopMcpServer();
 		assert(!m_editorState && "call destroyEditorState in destructor of derived class");
 	}
 
@@ -141,6 +173,21 @@ namespace jucePluginEditorLib
 		getController().loadChunkData(_cr);
 	}
 
+	void Processor::savePluginLoadPath()
+	{
+		const auto moduleFilePath = synthLib::getModuleFilePath();
+		if (moduleFilePath.empty())
+			return;
+
+		const auto format = getPluginFormatName(wrapperType, moduleFilePath);
+		if (format.empty())
+			return;
+
+		const auto key = "pluginPath_" + format;
+		getConfig().setValue(juce::String(key), juce::String(moduleFilePath));
+		getConfig().saveIfNeeded();
+	}
+
 	juce::File Processor::initConfigFile(const juce::PropertiesFile::Options& _o) const
 	{
 		// copy from old location to new if still exists
@@ -157,5 +204,49 @@ namespace jucePluginEditorLib
 			return newFile;
 		}
 		return newFile;
+	}
+
+	void Processor::startMcpServer()
+	{
+		if (m_mcpServer)
+			return;
+
+		try
+		{
+			m_mcpServer = std::make_unique<mcpServer::McpPluginServer>(*this);
+			registerDomTools(m_mcpServer->getServer(), *this);
+			registerPatchManagerTools(m_mcpServer->getServer(), *this);
+			if (m_mcpServer->start())
+			{
+				LOGNET(networkLib::LogLevel::Info, "MCP server started on port " << m_mcpServer->getPort() << " for plugin " << getProperties().name);
+			}
+			else
+			{
+				LOGNET(networkLib::LogLevel::Warning, "Failed to start MCP server for plugin " << getProperties().name);
+				m_mcpServer.reset();
+			}
+		}
+		catch (const std::exception& e)
+		{
+			LOGNET(networkLib::LogLevel::Warning, "MCP server creation failed: " << e.what());
+			m_mcpServer.reset();
+		}
+	}
+
+	void Processor::stopMcpServer()
+	{
+		if (m_mcpServer)
+		{
+			LOGNET(networkLib::LogLevel::Info, "MCP server stopped for plugin " << getProperties().name);
+			m_mcpServer.reset();
+		}
+	}
+
+	void Processor::setMcpServerEnabled(const bool _enabled)
+	{
+		if (_enabled)
+			startMcpServer();
+		else
+			stopMcpServer();
 	}
 }

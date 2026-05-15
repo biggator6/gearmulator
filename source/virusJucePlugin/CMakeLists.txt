@@ -6,8 +6,6 @@ set(SOURCES
 	ArpUserPattern.h
 	ControllerLinks.cpp
 	ControllerLinks.h
-	FxPage.cpp
-	FxPage.h
 	Leds.cpp
 	Leds.h
 	ParameterNames.h
@@ -17,8 +15,10 @@ set(SOURCES
 	Parts.h
 	PatchManager.cpp
 	PatchManager.h
-	Tabs.cpp
-	Tabs.h
+	SettingsGuiOsTIrus.cpp
+	SettingsGuiOsTIrus.h
+	SettingsDspAudioOsTIrus.cpp
+	SettingsDspAudioOsTIrus.h
 	VirusController.cpp
 	VirusController.h
 	VirusEditor.cpp
@@ -39,7 +39,6 @@ target_link_libraries(virusJucePlugin PUBLIC jucePluginEditorLib virusLib)
 target_include_directories(virusJucePlugin PUBLIC ../JUCE/modules)
 
 target_compile_definitions(virusJucePlugin PRIVATE JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1)
-target_compile_definitions(virusJucePlugin PUBLIC JUCE_MODAL_LOOPS_PERMITTED=1)
 
 if(UNIX AND NOT APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 	# strange GCC bug, a DeviceException that we throw is not caught in the catch block if LTO is enabled. 

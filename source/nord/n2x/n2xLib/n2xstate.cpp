@@ -9,6 +9,11 @@
 
 namespace n2x
 {
+	// MCU memory offsets relative to A4 base register (from firmware reverse engineering)
+	// Used to directly apply Master Tune since firmware protects it during multi dump processing
+	static constexpr uint32_t g_mcuMasterTuneOffset = 0x19F0;
+	static constexpr uint32_t g_mcuDspTuneValueOffset = 0x1A58;
+
 	static constexpr uint8_t g_singleDefault[] =
 	{
 		72,		// O2Pitch
@@ -209,8 +214,9 @@ namespace n2x
 
 	bool State::setState(const std::vector<uint8_t>& _state)
 	{
-		std::vector<std::vector<uint8_t>> msgs;
-		synthLib::MidiToSysex::splitMultipleSysex(msgs, _state);
+		synthLib::SysexBuffer stateBuf(_state.begin(), _state.end());
+		synthLib::SysexBufferList msgs;
+		synthLib::MidiToSysex::splitMultipleSysex(msgs, stateBuf);
 
 		for (auto& msg : msgs)
 			receive(msg, synthLib::MidiEventSource::Host);
@@ -271,13 +277,21 @@ namespace n2x
 					m_midiTranslator->addTargetChannel(ch, i);
 				}
 
-				synthLib::SMidiEvent e;
+				synthLib::SMidiEvent e(_ev.source);
 				e.sysex.assign(dump.begin(), dump.end());
 				send(e);
 			}
 			else
 			{
 				send(_ev);
+			}
+
+			// BUG-10010: Firmware's multi dump processing deliberately protects Master Tune,
+			// discarding the incoming value. Apply it directly to MCU memory after queuing the dump.
+			if(_ev.source != synthLib::MidiEventSource::Device)
+			{
+				const auto masterTune = unpackNibbles(m_multi, getOffsetInMultiDump(MultiParam::MasterTune));
+				applyMasterTuneToMCU(masterTune);
 			}
 
 			return true;
@@ -324,11 +338,21 @@ namespace n2x
 			e.offset = _ev.offset;
 			changeSingleParameter(part, e);
 		}
+		else if (bank == SysexByte::EmuSetMasterTune)
+		{
+			if(sysex.size() >= g_sysexHeaderSize + 1 + g_sysexFooterSize)
+			{
+				const auto masterTune = static_cast<uint8_t>((sysex[IdxMsgSpec] << 4) | sysex[IdxMsgSpec + 1]);
+				changeMultiParameter(MultiParam::MasterTune, masterTune);
+				applyMasterTuneToMCU(masterTune);
+				return true;
+			}
+		}
 
 		return false;
 	}
 
-	bool State::receive(const std::vector<uint8_t>& _data, synthLib::MidiEventSource _source)
+	bool State::receive(const synthLib::SysexBuffer& _data, synthLib::MidiEventSource _source)
 	{
 		synthLib::SMidiEvent e;
 		e.sysex = _data;
@@ -502,7 +526,7 @@ namespace n2x
 		return res;
 	}
 
-	std::vector<uint8_t> State::createKnobSysex(KnobType _type, uint8_t _value)
+	synthLib::SysexBuffer State::createKnobSysex(KnobType _type, uint8_t _value)
 	{
 		return {0xf0, IdClavia, DefaultDeviceId, IdN2X,
 			EmuSetPotPosition,
@@ -513,7 +537,7 @@ namespace n2x
 		};
 	}
 
-	bool State::parseKnobSysex(KnobType& _type, uint8_t& _value, const std::vector<uint8_t>& _sysex)
+	bool State::parseKnobSysex(KnobType& _type, uint8_t& _value, const synthLib::SysexBuffer& _sysex)
 	{
 		if(_sysex.size() <= SysexIndex::IdxKnobPosL)
 			return false;
@@ -535,35 +559,35 @@ namespace n2x
 		return true;
 	}
 
-	bool State::isSingleDump(const std::vector<uint8_t>& _dump)
+	bool State::isSingleDump(const synthLib::SysexBuffer& _dump)
 	{
 		return _dump.size() == g_singleDumpSize || _dump.size() == g_singleDumpWithNameSize;
 	}
 
-	bool State::isMultiDump(const std::vector<uint8_t>& _dump)
+	bool State::isMultiDump(const synthLib::SysexBuffer& _dump)
 	{
 		return _dump.size() == g_multiDumpSize || _dump.size() == g_multiDumpWithNameSize;
 	}
 
-	std::string State::extractPatchName(const std::vector<uint8_t>& _dump)
+	std::string State::extractPatchName(const synthLib::SysexBuffer& _dump)
 	{
-		if(!isDumpWithPatchName(_dump))
+		if (!isDumpWithPatchName(_dump))
 			return {};
 		auto* begin = &_dump[_dump.size() - g_nameLength - 1];
-		if(*begin == 0xf7)
+		if (*begin == 0xf7)
 			return {};
 		std::string name(reinterpret_cast<const char*>(begin), g_nameLength);
 		return name;
 	}
 
-	bool State::isDumpWithPatchName(const std::vector<uint8_t>& _dump)
+	bool State::isDumpWithPatchName(const synthLib::SysexBuffer& _dump)
 	{
 		return _dump.size() == g_singleDumpWithNameSize || _dump.size() == g_multiDumpWithNameSize;
 	}
 
-	std::vector<uint8_t> State::stripPatchName(const std::vector<uint8_t>& _dump)
+	synthLib::SysexBuffer State::stripPatchName(const synthLib::SysexBuffer& _dump)
 	{
-		if(!isDumpWithPatchName(_dump))
+		if (!isDumpWithPatchName(_dump))
 			return _dump;
 		auto d = _dump;
 		d.erase(d.end() - g_nameLength - 1, d.end() - 1);
@@ -572,27 +596,27 @@ namespace n2x
 		return d;
 	}
 
-	bool State::isValidPatchName(const std::vector<uint8_t>& _dump)
+	bool State::isValidPatchName(const synthLib::SysexBuffer& _dump)
 	{
-		if(!isDumpWithPatchName(_dump))
+		if (!isDumpWithPatchName(_dump))
 			return false;
 
-		if(_dump.back() != 0xf7)
+		if (_dump.back() != 0xf7)
 			return false;
 
 		const auto nameStart = _dump.size() - g_nameLength - 1;
 
-		for(size_t i=nameStart; i<nameStart+g_nameLength; ++i)
+		for (size_t i = nameStart; i < nameStart + g_nameLength; ++i)
 		{
-			if(_dump[i] < 32 || _dump[i] >= 128)
+			if (_dump[i] < 32 || _dump[i] >= 128)
 				return false;
 		}
 		return true;
 	}
 
-	std::vector<uint8_t> State::validateDump(const std::vector<uint8_t>& _dump)
+	synthLib::SysexBuffer State::validateDump(const synthLib::SysexBuffer& _dump)
 	{
-		if(!isValidPatchName(_dump))
+		if (!isValidPatchName(_dump))
 			return stripPatchName(_dump);
 		return _dump;
 	}
@@ -612,7 +636,7 @@ namespace n2x
 
 	void State::send(const synthLib::SMidiEvent& _e) const
 	{
-		if(_e.source == synthLib::MidiEventSource::Plugin)
+		if(_e.source == synthLib::MidiEventSource::Device)
 			return;
 
 		if(m_hardware)
@@ -646,5 +670,28 @@ namespace n2x
 		_buffer[SysexIndex::IdxMsgSpec] = _msgSpec;
 
 		_buffer.back() = 0xf7;
+	}
+
+	void State::applyMasterTuneToMCU(const uint8_t _masterTune)
+	{
+		if(!m_hardware)
+			return;
+
+		auto& uc = m_hardware->getUC();
+		const auto a4 = uc.getAReg(4);
+
+		if(a4 == 0)
+			return;
+
+		// Write Master Tune byte to firmware's global params area
+		uc.write8(a4 + g_mcuMasterTuneOffset, _masterTune);
+
+		// Calculate and write DSP tuning value using firmware's formula:
+		// DSP_value = ((signed_tune * 128) / 100) + 6318
+		const auto signedTune = static_cast<int8_t>(_masterTune);
+		const auto dspValue = static_cast<uint32_t>(((static_cast<int32_t>(signedTune) * 128) / 100) + 6318);
+
+		uc.write16(a4 + g_mcuDspTuneValueOffset, static_cast<uint16_t>(dspValue >> 16));
+		uc.write16(a4 + g_mcuDspTuneValueOffset + 2, static_cast<uint16_t>(dspValue & 0xFFFF));
 	}
 }

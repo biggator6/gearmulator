@@ -43,17 +43,18 @@ namespace mqJucePlugin
 	    struct Patch
 	    {
 	        std::string name;
-			std::vector<uint8_t> data;
+			synthLib::SysexBuffer data;
 	    };
 
 		baseLib::Event<bool> onPlayModeChanged;
+		baseLib::Event<uint8_t> onPatchNameChanged;
 
 	    Controller(AudioPluginAudioProcessor &, unsigned char _deviceId = 0);
 		~Controller() override;
 
 	    void setFrontPanel(mqJucePlugin::FrontPanel* _frontPanel);
-	    void sendSingle(const std::vector<uint8_t>& _sysex);
-	    void sendSingle(const std::vector<uint8_t>& _sysex, uint8_t _part);
+	    void sendSingle(const synthLib::SysexBuffer& _sysex);
+	    void sendSingle(const synthLib::SysexBuffer& _sysex, uint8_t _part);
 
 		bool sendSysEx(MidiPacketType _type) const;
 	    bool sendSysEx(MidiPacketType _type, std::map<pluginLib::MidiDataType, uint8_t>& _params) const;
@@ -64,10 +65,10 @@ namespace mqJucePlugin
 	    void selectNextPreset();
 	    void selectPrevPreset();
 
-		std::vector<uint8_t> createSingleDump(mqLib::MidiBufferNum _buffer, mqLib::MidiSoundLocation _location, uint8_t _locationOffset, uint8_t _part) const;
-		std::vector<uint8_t> createSingleDump(mqLib::MidiBufferNum _buffer, mqLib::MidiSoundLocation _location, uint8_t _locationOffset, const pluginLib::MidiPacket
+		synthLib::SysexBuffer createSingleDump(mqLib::MidiBufferNum _buffer, mqLib::MidiSoundLocation _location, uint8_t _locationOffset, uint8_t _part) const;
+		synthLib::SysexBuffer createSingleDump(mqLib::MidiBufferNum _buffer, mqLib::MidiSoundLocation _location, uint8_t _locationOffset, const pluginLib::MidiPacket
 		                                      ::AnyPartParamValues& _values) const;
-	    bool parseSingle(pluginLib::MidiPacket::Data& _data, pluginLib::MidiPacket::AnyPartParamValues& _paramValues, const std::vector<uint8_t>& _sysex) const;
+	    bool parseSingle(pluginLib::MidiPacket::Data& _data, pluginLib::MidiPacket::AnyPartParamValues& _paramValues, const synthLib::SysexBuffer& _sysex) const;
 
 		std::string getSingleName(const pluginLib::MidiPacket::ParamValues& _values) const;
 	    std::string getSingleName(const pluginLib::MidiPacket::AnyPartParamValues& _values) const;
@@ -77,6 +78,8 @@ namespace mqJucePlugin
 	    bool setSingleName(pluginLib::MidiPacket::AnyPartParamValues& _values, const std::string& _value) const;
 	    bool setCategory(pluginLib::MidiPacket::AnyPartParamValues& _values, const std::string& _value) const;
 	    bool setString(pluginLib::MidiPacket::AnyPartParamValues& _values, const std::string& _prefix, size_t _len, const std::string& _value) const;
+
+		const std::string& getPatchName(uint8_t _part) const;
 
 	private:
 		void selectPreset(int _offset);
@@ -88,9 +91,8 @@ namespace mqJucePlugin
 	    bool parseMidiPacket(MidiPacketType _type, pluginLib::MidiPacket::Data& _data, pluginLib::MidiPacket::AnyPartParamValues& _params, const pluginLib::SysEx& _sysex) const;
 
 	    bool parseSysexMessage(const pluginLib::SysEx&, synthLib::MidiEventSource _source) override;
-		bool parseControllerMessage(const synthLib::SMidiEvent&) override;
 
-		void sendParameterChange(const pluginLib::Parameter& _parameter, pluginLib::ParamValue _value) override;
+		void sendParameterChange(const pluginLib::Parameter& _parameter, pluginLib::ParamValue _value, pluginLib::Parameter::Origin _origin) override;
 	    bool sendGlobalParameterChange(mqLib::GlobalParameter _param, uint8_t _value);
 		void requestSingle(mqLib::MidiBufferNum _buf, mqLib::MidiSoundLocation _location, uint8_t _locationOffset = 0) const;
 		void requestMulti(mqLib::MidiBufferNum _buf, mqLib::MidiSoundLocation _location, uint8_t _locationOffset = 0) const;
@@ -98,6 +100,8 @@ namespace mqJucePlugin
 	    uint8_t getGlobalParam(mqLib::GlobalParameter _type) const;
 
 		bool isDerivedParameter(pluginLib::Parameter& _derived, pluginLib::Parameter& _base) const override;
+
+		std::vector<uint8_t> getPartsForMidiChannel(uint8_t _channel) override;
 
 		void requestAllPatches() const;
 

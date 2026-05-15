@@ -11,8 +11,7 @@
 #include "buildconfig.h"
 #include "midiTranslator.h"
 
-#include "asmjit/core/api-config.h"
-
+#include "baseLib/compilerdefs.h"
 #include "baseLib/md5.h"
 
 namespace synthLib
@@ -25,6 +24,7 @@ namespace synthLib
 		std::vector<uint8_t> romData;
 		baseLib::MD5 romHash;
 		uint32_t customData = 0;
+		std::string homePath;
 	};
 
 	class Device
@@ -81,9 +81,9 @@ namespace synthLib
 		virtual bool setDspClockPercent(uint32_t _percent = 100) = 0;
 		virtual uint32_t getDspClockPercent() const = 0;
 		virtual uint64_t getDspClockHz() const = 0;
+		virtual bool canModifyDspClock() const { return false; }
 
-
-		ASMJIT_NOINLINE virtual void release(std::vector<SMidiEvent>& _events);
+		BASELIB_NOINLINE virtual void release(std::vector<SMidiEvent>& _events);
 
 		auto& getMidiTranslator() { return m_midiTranslator; }
 

@@ -10,6 +10,8 @@ namespace synthLib
 	class MidiBufferParser
 	{
 	public:
+		explicit MidiBufferParser(const MidiEventSource _source);
+
 		void write(const std::vector<uint8_t>& _data);
 		void write(uint8_t _data);
 		void getEvents(std::vector<synthLib::SMidiEvent>& _events);
@@ -43,7 +45,7 @@ namespace synthLib
 		void flushEvent();
 
 		std::vector<synthLib::SMidiEvent> m_midiEvents;
-		std::vector<uint8_t> m_sysexBuffer;
+		SysexBuffer m_sysexBuffer;
 		synthLib::SMidiEvent m_pendingEvent;
 		uint32_t m_pendingEventLen = 0;
 		bool m_sysex = false;

@@ -3,6 +3,7 @@ project(jucePlugin VERSION ${CMAKE_PROJECT_VERSION})
 
 set(SOURCES
 	parameterDescriptions_mq.json
+
     PluginEditorState.cpp PluginEditorState.h
     PluginProcessor.cpp PluginProcessor.h
 	mqController.cpp mqController.h
@@ -15,12 +16,22 @@ set(SOURCES
 	mqPartSelect.cpp mqPartSelect.h
 	mqPatchManager.cpp mqPatchManager.h
 	mqPatchBrowser.h
+	mqSettingsDspAudio.cpp mqSettingsDspAudio.h
+
+	skins/mqDefault/mqDefault.rml
+	skins/mqDefault/mqDefault.rcss
+
+	skins/mqFrontPanel/mqFrontPanel.rml
+	skins/mqFrontPanel/mqFrontPanel.rcss
 )
 
-SET(ASSETS "parameterDescriptions_mq.json")
+SET(ASSETS
+	"parameterDescriptions_mq.json"
+	"tus_settings_dspaudio_Vavra.rml"
+)
 
-addSkin("Vavra" "mqDefault" "skins/mqDefault" "mqDefault.json" "ASSETS_mqDefault")
-addSkin("Vavra" "mqFrontPanel" "skins/mqFrontPanel" "mqFrontPanel.json" "ASSETS_mqFrontPanel")
+addSkin("Vavra" "mqDefault" "skins/mqDefault" "mqDefault.rml")
+addSkin("Vavra" "mqFrontPanel" "skins/mqFrontPanel" "mqFrontPanel.rml")
 
 buildSkinHeader()
 

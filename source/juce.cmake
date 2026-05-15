@@ -6,35 +6,115 @@ option(${CMAKE_PROJECT_NAME}_BUILD_JUCEPLUGIN_VST3 "Build VST3 version of Juce p
 option(${CMAKE_PROJECT_NAME}_BUILD_JUCEPLUGIN_CLAP "Build CLAP version of Juce plugins" on)
 option(${CMAKE_PROJECT_NAME}_BUILD_JUCEPLUGIN_LV2 "Build LV2 version of Juce plugins" off)
 option(${CMAKE_PROJECT_NAME}_BUILD_JUCEPLUGIN_AU "Build AU version of Juce plugins" on)
+option(${CMAKE_PROJECT_NAME}_BUILD_JUCEPLUGIN_Standalone "Build Standalone version of Juce plugins" off)
 
 set(USE_CLAP ${${CMAKE_PROJECT_NAME}_BUILD_JUCEPLUGIN_CLAP})
 set(USE_LV2 ${${CMAKE_PROJECT_NAME}_BUILD_JUCEPLUGIN_LV2})
 set(USE_VST2 ${${CMAKE_PROJECT_NAME}_BUILD_JUCEPLUGIN_VST2})
 set(USE_VST3 ${${CMAKE_PROJECT_NAME}_BUILD_JUCEPLUGIN_VST3})
 set(USE_AU ${${CMAKE_PROJECT_NAME}_BUILD_JUCEPLUGIN_AU})
+set(USE_Standalone ${${CMAKE_PROJECT_NAME}_BUILD_JUCEPLUGIN_Standalone})
 
 set(JUCE_CMAKE_DIR ${CMAKE_CURRENT_LIST_DIR})
 
 set(juce_formats "")
+set(plugin_formats "")
 
-if(USE_AU)
+if(USE_AU AND APPLE)
 	set(juce_formats AU)
+	set(plugin_formats AU)
+	add_custom_target(PluginFormat_AU)
+	set_property(TARGET PluginFormat_AU PROPERTY FOLDER CustomTargets)
 endif()
 
 if(USE_VST2 AND JUCE_GLOBAL_VST2_SDK_PATH)
     list(APPEND juce_formats VST)
+	list(APPEND plugin_formats VST2)
+	add_custom_target(PluginFormat_VST2)
+	set_property(TARGET PluginFormat_VST2 PROPERTY FOLDER CustomTargets)
 endif()
 
 if(USE_VST3)
     list(APPEND juce_formats VST3)
+	list(APPEND plugin_formats VST3)
+	add_custom_target(PluginFormat_VST3)
+	set_property(TARGET PluginFormat_VST3 PROPERTY FOLDER CustomTargets)
 endif()
 
 if(USE_LV2)
     list(APPEND juce_formats LV2)
+    list(APPEND plugin_formats LV2)
+	add_custom_target(PluginFormat_LV2)
+	set_property(TARGET PluginFormat_LV2 PROPERTY FOLDER CustomTargets)
+endif()
+
+if(USE_CLAP)
+    list(APPEND plugin_formats CLAP)
+	add_custom_target(PluginFormat_CLAP)
+	set_property(TARGET PluginFormat_CLAP PROPERTY FOLDER CustomTargets)
+endif()
+
+if(USE_Standalone)
+    list(APPEND juce_formats Standalone)
+    list(APPEND plugin_formats Standalone)
+	add_custom_target(PluginFormat_Standalone)
+	set_property(TARGET PluginFormat_Standalone PROPERTY FOLDER CustomTargets)
 endif()
 
 add_custom_target(ServerPlugins)
 set_property(TARGET ServerPlugins PROPERTY FOLDER CustomTargets)
+
+add_library(juce_plugin_modules STATIC)
+
+target_link_libraries(juce_plugin_modules PRIVATE
+    juce::juce_core
+    juce::juce_audio_basics
+    juce::juce_audio_utils
+    juce::juce_audio_devices
+    juce::juce_audio_processors
+	juce::juce_cryptography
+	juce::juce_opengl
+)
+
+target_compile_definitions(juce_plugin_modules PUBLIC
+	JUCE_WEB_BROWSER=0  # If you remove this, add `NEEDS_WEB_BROWSER TRUE` to the `juce_add_plugin` call
+	JUCE_USE_CURL=0     # If you remove this, add `NEEDS_CURL TRUE` to the `juce_add_plugin` call
+	JUCE_VST3_CAN_REPLACE_VST2=0
+	JUCE_WIN_PER_MONITOR_DPI_AWARE=1
+	JUCE_USE_OGGVORBIS=0
+	JUCE_USE_MP3AUDIOFORMAT=0
+	JUCE_USE_FLAC=0
+	JUCE_USE_WINDOWS_MEDIA_FORMAT=0
+	JUCE_MODULE_AVAILABLE_juce_core=1
+	JUCE_MODULE_AVAILABLE_juce_audio_basics=1
+	JUCE_MODULE_AVAILABLE_juce_audio_utils=1
+	JUCE_MODULE_AVAILABLE_juce_audio_devices=1
+	JUCE_MODULE_AVAILABLE_juce_audio_processors=1
+	JUCE_MODULE_AVAILABLE_juce_cryptopgraphy=1
+)
+
+target_include_directories(juce_plugin_modules
+    INTERFACE
+        $<TARGET_PROPERTY:juce_plugin_modules,INCLUDE_DIRECTORIES>)
+
+_juce_fixup_module_source_groups()
+
+# juce::juce_audio_plugin_client is the lib that every plugin links. However, this pulls in lots of juce modules that are 
+# all INTERFACE targets, causing all the sources to end up in every plugin we build. We remove this dependency as we already
+# link them via our rebuilt static lib that we created above. This causes all juce modules to only show up in our static
+# lib instead of every plugin
+
+macro(removeJuceDependencies targetName)
+	# Get the current link libraries before modifying
+
+	get_target_property(pluginLibs ${targetName} LINK_LIBRARIES)
+	list(REMOVE_ITEM pluginLibs juce::juce_dsp juce::juce_audio_processors juce::juce_audio_formats juce::juce_audio_basics juce::juce_audio_plugin_client $<LINK_ONLY:juce::juce_audio_plugin_client>)
+	set_target_properties(${targetName} PROPERTIES LINK_LIBRARIES "${pluginLibs}")
+
+	get_target_property(pluginLibs ${targetName} INTERFACE_LINK_LIBRARIES)
+	list(REMOVE_ITEM pluginLibs juce::juce_dsp juce::juce_audio_processors juce::juce_audio_formats juce::juce_audio_basics juce::juce_audio_plugin_client $<LINK_ONLY:juce::juce_audio_plugin_client>)
+	set_target_properties(${targetName} PROPERTIES INTERFACE_LINK_LIBRARIES "${pluginLibs}")
+endmacro()
 
 macro(createJucePlugin targetName productName isSynth plugin4CC binaryDataProject synthLibProject)
 	juce_add_plugin(${targetName}
@@ -58,43 +138,31 @@ macro(createJucePlugin targetName productName isSynth plugin4CC binaryDataProjec
 		VST3_AUTO_MANIFEST TRUE                           # While generating a moduleinfo.json is nice, Juce does not properly package using cpack on Win/Linux
 		                                                  # and completely fails on Linux if we change the suffix to .vst3, so we skip that completely for now
 		BUNDLE_ID "com.theusualsuspects.${productName}"
-		LV2URI "http://theusualsuspects.lv2.${productName}"
+		LV2URI "http://theusualsuspects.lv2/${productName}"
 	)
 
 	target_sources(${targetName} PRIVATE ${SOURCES} serverPlugin.cpp)
 
 	source_group("source" FILES ${SOURCES})
 
+	removeJuceDependencies(${targetName})
+
 	target_compile_definitions(${targetName} 
 	PUBLIC
-		# JUCE_WEB_BROWSER and JUCE_USE_CURL would be on by default, but you might not need them.
-		JUCE_WEB_BROWSER=0  # If you remove this, add `NEEDS_WEB_BROWSER TRUE` to the `juce_add_plugin` call
-		JUCE_USE_CURL=0     # If you remove this, add `NEEDS_CURL TRUE` to the `juce_add_plugin` call
-		JUCE_VST3_CAN_REPLACE_VST2=0
-		JUCE_WIN_PER_MONITOR_DPI_AWARE=1
-		JUCE_MODAL_LOOPS_PERMITTED=1
-		JUCE_USE_OGGVORBIS=0
-		JUCE_USE_MP3AUDIOFORMAT=0
-		JUCE_USE_FLAC=0
-		JUCE_USE_WINDOWS_MEDIA_FORMAT=0
-		
 		PluginName="${productName}"
 		PluginVersionMajor=${CMAKE_PROJECT_VERSION_MAJOR}
 		PluginVersionMinor=${CMAKE_PROJECT_VERSION_MINOR}
 		PluginVersionPatch=${CMAKE_PROJECT_VERSION_PATCH}
 		Plugin4CC="${plugin4CC}"
+		JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1
 	)
 
 	target_link_libraries(${targetName}
-	PUBLIC
+	PRIVATE
 		${binaryDataProject}
-		jucePluginEditorLib
 		${synthLibProject}
-		juce::juce_audio_utils
-		juce::juce_cryptography
-		#juce::juce_recommended_config_flags
-		#juce::juce_recommended_lto_flags
-		#juce::juce_recommended_warning_flags
+		jucePluginEditorLib
+		juce_plugin_modules
 	)
 
 	if(${isSynth})
@@ -126,12 +194,17 @@ macro(createJucePlugin targetName productName isSynth plugin4CC binaryDataProjec
 			)
 		set_property(TARGET ${targetName}_CLAP PROPERTY FOLDER ${targetName})
 		add_dependencies(${targetName}_All ${targetName}_CLAP)
+		add_dependencies(PluginFormat_CLAP ${targetName}_CLAP)
 	endif()
 
 	if(UNIX AND NOT APPLE)
 		target_link_libraries(${targetName} PUBLIC -static-libgcc -static-libstdc++)
 	endif()
 	
+	if(USE_VST2)
+		add_dependencies(PluginFormat_VST2 ${targetName}_VST)
+	endif()
+
 	if(USE_VST3)
 		if(APPLE)
 			install(TARGETS ${targetName}_VST3 DESTINATION . COMPONENT ${productName}-VST3)
@@ -147,6 +220,7 @@ macro(createJucePlugin targetName productName isSynth plugin4CC binaryDataProjec
 			endif()
 			install(DIRECTORY ${vst3OutputFolder}/${productName}.vst3 DESTINATION ${dest} COMPONENT ${productName}-VST3 FILES_MATCHING PATTERN ${pattern} PATTERN "*.json")
 		endif()
+		add_dependencies(PluginFormat_VST3 ${targetName}_VST3)
 	endif()
 
 	if(MSVC OR APPLE)
@@ -193,6 +267,7 @@ macro(createJucePlugin targetName productName isSynth plugin4CC binaryDataProjec
 		if(APPLE)
 			installMacSetupScript(${dest} ${productName}-LV2)
 		endif()
+		add_dependencies(PluginFormat_LV2 ${targetName}_LV2)
 	endif()
 
 	if(USE_AU AND APPLE AND ${isSynth})
@@ -201,10 +276,51 @@ macro(createJucePlugin targetName productName isSynth plugin4CC binaryDataProjec
 			-DIDPLUGIN=${plugin4CC}
 			-DBINDIR=${CMAKE_BINARY_DIR}
 			-DCOMPONENT_NAME=${productName}
-			-DCPACK_FILE=${CPACK_PACKAGE_NAME}-${CMAKE_PROJECT_VERSION}-${CPACK_SYSTEM_NAME}-${productName}-AU.zip
+			-DCPACK_FILE=${CPACK_PACKAGE_NAME}-${productName}-AU-${CMAKE_PROJECT_VERSION}-${CPACK_SYSTEM_NAME}.zip
 			-P ${JUCE_CMAKE_DIR}/runAuValidation.cmake)
 		set_tests_properties(${targetName}_AU_Validate PROPERTIES LABELS "PluginTest")
 	endif()
+
+	if(USE_Standalone)
+		add_dependencies(PluginFormat_Standalone ${targetName}_Standalone)
+	endif()
+
+	if(USE_VST2)
+		addPluginTest(${targetName}_VST)
+	endif()
+	if(USE_VST3)
+		addPluginTest(${targetName}_VST3)
+	endif()
+	if(USE_AU AND APPLE AND ${isSynth})	# Apparently FX AU plugins are not supported by juce audio plugin host
+		addPluginTest(${targetName}_AU)
+	endif()
+	if(USE_LV2)
+		addPluginTest(${targetName}_LV2)
+	endif()
+
+	# CLAP hosting is not currently supported by the clap-juce-extensions
+#	if(USE_CLAP)
+#		addPluginTest(${targetName}_CLAP)
+#	endif()
+
+	set_target_properties(${targetName} PROPERTIES TUS_PRODUCT_NAME "${productName}")
+	set_target_properties(${targetName} PROPERTIES TUS_PLUGIN_FORMATS "${juce_formats}")
+	set_target_properties(${targetName} PROPERTIES TUS_PLUGIN_IS_SYNTH ${isSynth})
+	set_target_properties(${targetName} PROPERTIES TUS_PLUGIN_4CC ${plugin4CC})
+
+	if(${isSynth})
+		tus_exportTarget(${targetName})
+	endif()
+
+	# ---------- add changelog to each plugin ----------
+	tus_registerChangelog(${targetName})
+
+	foreach(format IN LISTS plugin_formats)
+		string(REPLACE "FX" "" productNameClean ${productName})
+		install(FILES "${CMAKE_SOURCE_DIR}/doc/changelog_split/changelog_${productNameClean}.txt"
+			DESTINATION .
+			COMPONENT ${productName}-${format})
+	endforeach()
 
 	# --------- Server Plugin ---------
 

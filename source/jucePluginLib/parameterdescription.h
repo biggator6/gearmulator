@@ -23,9 +23,17 @@ namespace pluginLib
 	{
 		static constexpr int NoDefaultValue = std::numeric_limits<int>::max();
 
+		Description() = default;
+		Description(const Description&) = delete;
+		Description(Description&&) noexcept = default;
+		Description& operator = (const Description&) = delete;
+		Description& operator = (Description&&) noexcept = default;
+		~Description() = default;
+
 		uint8_t page;
 		uint8_t index;
 		int classFlags;
+		int version = 0;
 		std::string name;
 		std::string displayName;
 		juce::Range<int> range;

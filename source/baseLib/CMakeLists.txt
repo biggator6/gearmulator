@@ -6,11 +6,15 @@ add_library(baseLib STATIC)
 set(SOURCES
 	binarystream.cpp binarystream.h
 	commandline.cpp commandline.h
+	compilerdefs.h
 	configFile.cpp configFile.h
+	endian.h
 	event.cpp event.h
 	filesystem.cpp filesystem.h
 	hybridcontainer.h
+	logging.cpp logging.h
 	md5.cpp md5.h
+	os.cpp os.h
 	propertyMap.cpp propertyMap.h
 	semaphore.h
 )

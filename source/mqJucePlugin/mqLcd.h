@@ -1,7 +1,5 @@
 #pragma once
 
-#include "juce_gui_basics/juce_gui_basics.h"
-
 #include "mqLcdBase.h"
 
 #include "jucePluginEditorLib/lcd.h"
@@ -9,7 +7,7 @@
 class MqLcd final : public jucePluginEditorLib::Lcd, public MqLcdBase
 {
 public:
-	explicit MqLcd(Component& _parent);
+	explicit MqLcd(Rml::Element* _parent);
 	~MqLcd() override;
 
 	void setText(const std::array<uint8_t, 40> &_text) override;
